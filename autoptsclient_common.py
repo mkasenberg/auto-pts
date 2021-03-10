@@ -417,14 +417,14 @@ def init_pts(args, tc_db_table_name=None):
 
     init_logging()
 
-    local_port = CLIENT_PORT
+    local_port = args.cli_port
 
     for server_addr, local_addr in zip(args.ip_addr, args.local_addr):
         if AUTO_PTS_LOCAL:
             proxy = FakeProxy()
         else:
             proxy = xmlrpc.client.ServerProxy(
-                "http://{}:{}/".format(server_addr, SERVER_PORT),
+                "http://{}:{}/".format(server_addr, args.srv_port),
                 allow_none=True,)
 
         print("(%r) Starting PTS %s ..." % (id(proxy), server_addr))
@@ -957,3 +957,9 @@ class CliParser(argparse.ArgumentParser):
         self.add_argument("-r", "--retry", type=int, default=0,
                           help="Repeat test if failed. Parameter specifies "
                                "maximum repeat count per test")
+
+        self.add_argument("-S", "--srv_port", type=int, default=SERVER_PORT,
+                          help="Specify the server port number")
+
+        self.add_argument("-C", "--cli_port", type=int, default=CLIENT_PORT,
+                          help="Specify the client port number")
