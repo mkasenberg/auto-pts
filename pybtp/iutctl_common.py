@@ -33,7 +33,8 @@ from .parser import enc_frame, dec_hdr, dec_data, HDR_LEN
 log = logging.debug
 
 # BTP communication transport: unix domain socket file name
-BTP_ADDRESS = "/tmp/bt-stack-tester"
+# BTP_ADDRESS = "/tmp/bt-stack-tester"
+BTP_ADDRESS = "127.0.0.1:65123"
 
 EVENT_HANDLER = None
 
@@ -57,8 +58,11 @@ class BTPSocket(object):
         if os.path.exists(BTP_ADDRESS):
             os.remove(BTP_ADDRESS)
 
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.bind(BTP_ADDRESS)
+        # self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        # self.sock.bind(BTP_ADDRESS)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind((socket.gethostname(), 65123))
+        print("gethostname ", socket.gethostname())
 
         # queue only one connection
         self.sock.listen(1)

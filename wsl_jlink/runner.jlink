@@ -1,0 +1,6 @@
+r
+loadfile C:/Users/Magda/zephyrproject/zephyr/build/zephyr/zephyr.hex
+g
+writeDP 1 0
+readDP 1
+q

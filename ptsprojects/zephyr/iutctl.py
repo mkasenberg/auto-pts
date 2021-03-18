@@ -20,6 +20,7 @@ import shlex
 import serial
 
 from pybtp import defs
+from pybtp.btp import CORE
 from pybtp.types import BTPError
 from pybtp.iutctl_common import BTPWorker, BTP_ADDRESS, RTT2PTY
 
@@ -90,8 +91,11 @@ class ZephyrCtl:
         self.btp_socket.open()
 
         if self.tty_file:
-            socat_cmd = ("socat -x -v %s,rawer,b115200 UNIX-CONNECT:%s" %
-                         (self.tty_file, BTP_ADDRESS))
+            # socat_cmd = ("socat -x -v %s,rawer,b115200 UNIX-CONNECT:%s" %
+            #              (self.tty_file, BTP_ADDRESS))
+            # socat_cmd = ("strace -f -A -o /tmp/mojplik socat -x -v tcp-listen:%s %s,raw,b115200" %
+            socat_cmd = ("strace -f -A -o /tmp/mojplik socat -x -v tcp:127.0.1.1:%s,retry=10,interval=1 %s,raw,b115200" %
+                         (65123, self.tty_file))
 
             log("Starting socat process: %s", socat_cmd)
 
@@ -112,6 +116,8 @@ class ZephyrCtl:
                                                  stderr=self.iut_log_file)
 
         self.btp_socket.accept()
+        # Needed handshake
+        self.btp_socket.send(*CORE['read_supp_cmds'])
 
     def flush_serial(self):
         log("%s.%s", self.__class__, self.flush_serial.__name__)
@@ -312,7 +318,8 @@ class Board:
         Dependency: nRF5x command line tools
 
         """
-        return 'nrfjprog -f nrf52 -r'
+        return 'ssh Magda@192.168.3.2 nrfjprog -f nrf52 -r'
+        # return 'nrfjprog -f nrf52 -r'
 
     def _get_reset_cmd_reel(self):
         """Return reset command for Reel_Board DUT
