@@ -13,6 +13,7 @@
 # more details.
 #
 
+import re
 import socket
 import subprocess
 import os
@@ -61,6 +62,22 @@ class ZephyrCtl:
 
         self.kernel_image = kernel_image
         self.tty_file = tty_file
+
+        debuggers = subprocess.Popen('nrfjprog --com',
+                                     shell=True,
+                                     stdout=subprocess.PIPE
+                                     ).stdout.read().decode()
+
+        if sys.platform == "win32":
+            COM = "COM" + str(int(self.tty_file["/dev/ttyS".__len__():]) + 1)
+            reg = "[0-9]+(?=\s+" + COM + ".+)"
+        else:
+            reg = "[0-9]+(?=\s+" + self.tty_file + ".+)"
+
+        try:
+            self.debugger_snr = re.findall(reg, debuggers)[0]
+        except:
+            sys.exit("No debuggers associated with the device found")
 
         if self.tty_file and board_name:  # DUT is a hardware board, not QEMU
             self.board = Board(board_name, kernel_image, self)
@@ -239,8 +256,8 @@ class Board:
 
         self.name = board_name
         self.kernel_image = kernel_image
-        self.reset_cmd = self.get_reset_cmd()
         self.iutctl = iutctl
+        self.reset_cmd = self.get_reset_cmd()
 
     def reset(self):
         """Reset HW DUT board with openocd
@@ -326,7 +343,7 @@ class Board:
         Dependency: nRF5x command line tools
 
         """
-        return 'nrfjprog -f nrf52 -r'
+        return 'nrfjprog -f nrf52 -r -s ' + self.iutctl.debugger_snr
 
     def _get_reset_cmd_reel(self):
         """Return reset command for Reel_Board DUT
@@ -335,6 +352,7 @@ class Board:
 
         """
         return 'pyocd cmd -c reset'
+
 
 def get_iut():
     return ZEPHYR
