@@ -312,12 +312,12 @@ def get_my_ip_address():
 get_my_ip_address.cached_address = None
 
 
-def init_logging():
+def init_logging(tag=""):
     """Initialize logging"""
     script_name = os.path.basename(sys.argv[0])  # in case it is full path
     script_name_no_ext = os.path.splitext(script_name)[0]
 
-    log_filename = "%s.log" % (script_name_no_ext,)
+    log_filename = "%s%s.log" % (script_name_no_ext, tag)
     format = ("%(asctime)s %(name)s %(levelname)s %(filename)-25s "
               "%(lineno)-5s %(funcName)-25s : %(message)s")
 
@@ -415,7 +415,7 @@ def init_pts(args, tc_db_table_name=None):
     proxy_list = []
     thread_list = []
 
-    init_logging()
+    init_logging("_" + str(args.cli_port))
 
     local_port = args.cli_port
 
@@ -881,7 +881,7 @@ def run_test_cases(ptses, test_case_instances, args):
         return True
 
     now = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    session_log_dir = 'logs/' + now
+    session_log_dir = 'logs/cli_port_' + str(args.cli_port) + '/' + now
     try:
         os.makedirs(session_log_dir)
     except OSError as e:
