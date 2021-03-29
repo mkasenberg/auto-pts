@@ -22,6 +22,7 @@ import sys
 import ctypes
 import argparse
 from distutils.spawn import find_executable
+import _locale
 
 import autoptsclient_common as autoptsclient
 import ptsprojects.zephyr as autoprojects
@@ -102,6 +103,9 @@ def parse_args():
 
 def main():
     """Main."""
+
+    # Workaround for Windows with default encoding other than cp1252
+    _locale._getdefaultlocale = (lambda *args: ['en_US', 'utf8'])
 
     if have_admin_rights():  # root privileges are not needed
         sys.exit("Please do not run this program as root.")
