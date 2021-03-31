@@ -41,7 +41,16 @@ def check_args(args):
     ip_addr = args.ip_addr
 
     if not ip_addr:
-        sys.exit("Server IP address not specified!")
+        if sys.platform == 'win32':
+            args.ip_addr = ['127.0.0.1']
+        else:
+            sys.exit("Server IP address not specified!")
+
+    if not args.local_addr:
+        if sys.platform == 'win32':
+            args.local_addr = ['127.0.0.1']
+        else:
+            sys.exit("Local IP address not specified!")
 
     if tty_file:
         if tty_file.startswith("COM"):
