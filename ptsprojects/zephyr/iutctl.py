@@ -13,12 +13,16 @@
 # more details.
 #
 
+import re
+import socket
 import subprocess
 import os
 import logging
 import shlex
+import sys
 import serial
 
+from config import DEVICE_SOCAT_PORT
 from pybtp import defs
 from pybtp.types import BTPError
 from pybtp.iutctl_common import BTPWorker, BTP_ADDRESS, RTT2PTY
@@ -59,6 +63,22 @@ class ZephyrCtl:
         self.kernel_image = kernel_image
         self.tty_file = tty_file
 
+        debuggers = subprocess.Popen('nrfjprog --com',
+                                     shell=True,
+                                     stdout=subprocess.PIPE
+                                     ).stdout.read().decode()
+
+        if sys.platform == "win32":
+            COM = "COM" + str(int(self.tty_file["/dev/ttyS".__len__():]) + 1)
+            reg = "[0-9]+(?=\s+" + COM + ".+)"
+        else:
+            reg = "[0-9]+(?=\s+" + self.tty_file + ".+)"
+
+        try:
+            self.debugger_snr = re.findall(reg, debuggers)[0]
+        except:
+            sys.exit("No debuggers associated with the device found")
+
         if self.tty_file and board_name:  # DUT is a hardware board, not QEMU
             self.board = Board(board_name, kernel_image, self)
         else:  # DUT is QEMU or a board that won't be reset
@@ -90,8 +110,19 @@ class ZephyrCtl:
         self.btp_socket.open()
 
         if self.tty_file:
-            socat_cmd = ("socat -x -v %s,rawer,b115200 UNIX-CONNECT:%s" %
-                         (self.tty_file, BTP_ADDRESS))
+            if sys.platform == "win32":
+                # On windows socat.exe does not support setting serial baud rate.
+                # Set it with 'mode' from cmd.exe
+                COM = "COM" + str(int(self.tty_file["/dev/ttyS".__len__():]) + 1)
+                mode_cmd = (">nul 2>nul cmd.exe /c \"mode " + COM + "BAUD=115200 PARITY=n DATA=8 STOP=1\"")
+                os.system(mode_cmd)
+
+                socat_cmd = ("socat.exe -x -v tcp:" + socket.gethostbyname(socket.gethostname()) +
+                             ":%s,retry=100,interval=1 %s,raw,b115200" %
+                             (DEVICE_SOCAT_PORT, self.tty_file))
+            else:
+                socat_cmd = ("socat -x -v %s,rawer,b115200 UNIX-CONNECT:%s" %
+                             (self.tty_file, BTP_ADDRESS))
 
             log("Starting socat process: %s", socat_cmd)
 
@@ -225,8 +256,8 @@ class Board:
 
         self.name = board_name
         self.kernel_image = kernel_image
-        self.reset_cmd = self.get_reset_cmd()
         self.iutctl = iutctl
+        self.reset_cmd = self.get_reset_cmd()
 
     def reset(self):
         """Reset HW DUT board with openocd
@@ -312,7 +343,7 @@ class Board:
         Dependency: nRF5x command line tools
 
         """
-        return 'nrfjprog -f nrf52 -r'
+        return 'nrfjprog -f nrf52 -r -s ' + self.iutctl.debugger_snr
 
     def _get_reset_cmd_reel(self):
         """Return reset command for Reel_Board DUT
@@ -321,6 +352,7 @@ class Board:
 
         """
         return 'pyocd cmd -c reset'
+
 
 def get_iut():
     return ZEPHYR

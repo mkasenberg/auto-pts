@@ -17,13 +17,22 @@ import os
 import logging
 import socket
 import binascii
+import sys
 import threading
 import signal
 import subprocess
 import serial
 import time
-from fcntl import fcntl, F_GETFL, F_SETFL
-from os import O_NONBLOCK, read
+
+from config import DEVICE_SOCAT_PORT
+
+if sys.platform == "win32":
+    BTP_ADDRESS = socket.gethostname() + ":" + DEVICE_SOCAT_PORT.__str__()
+    pass
+else:
+    from fcntl import fcntl, F_GETFL, F_SETFL
+    from os import O_NONBLOCK, read
+    BTP_ADDRESS = "/tmp/bt-stack-tester"
 import queue
 
 from . import defs
@@ -33,7 +42,6 @@ from .parser import enc_frame, dec_hdr, dec_data, HDR_LEN
 log = logging.debug
 
 # BTP communication transport: unix domain socket file name
-BTP_ADDRESS = "/tmp/bt-stack-tester"
 
 EVENT_HANDLER = None
 
@@ -57,8 +65,12 @@ class BTPSocket(object):
         if os.path.exists(BTP_ADDRESS):
             os.remove(BTP_ADDRESS)
 
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.bind(BTP_ADDRESS)
+        if sys.platform == "win32":
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.bind((socket.gethostname(), DEVICE_SOCAT_PORT))
+        else:
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.bind(BTP_ADDRESS)
 
         # queue only one connection
         self.sock.listen(1)
@@ -124,10 +136,14 @@ class BTPSocket(object):
 
     def close(self):
         try:
-            self.sock.shutdown(socket.SHUT_RDWR)
+            self.conn.shutdown(socket.SHUT_RDWR)
+            self.conn.close()
             self.sock.close()
         except:
             pass
+        # TODO We should wait for the [FIN, ACK] packet to arrive or
+        # next connection could fail(on Windows race occurred)
+        time.sleep(2)
         self.sock = None
         self.conn = None
         self.addr = None
