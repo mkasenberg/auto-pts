@@ -1102,9 +1102,14 @@ class CliParser(argparse.ArgumentParser):
                                    "will not be reset. Supported boards: %s. " %
                                    (", ".join(board_names, ),), choices=board_names)
 
-            self.add_argument("--rtt2pty",
-                              help="Use RTT2PTY to capture logs from device."
-                                   "Requires rtt2pty tool and rtt support on IUT.",
+            self.add_argument("--btmon",
+                              help="Capture iut btsnoop logs from device over RTT"
+                              "and catch them with btmon. Requires rtt support"
+                              "on IUT.", action='store_true', default=False)
+
+            self.add_argument("--rtt-log",
+                              help="Capture iut logs from device over RTT. "
+                              "Requires rtt support on IUT.",
                               action='store_true', default=False)
         else:
             self.add_argument("btpclient_path",

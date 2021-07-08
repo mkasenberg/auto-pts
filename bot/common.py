@@ -77,6 +77,7 @@ class BotConfigArgs(Namespace):
         self.local_addr = args.get('local_ip', ['127.0.0.1'] * len(self.cli_port))
         self.kernel_image = args.get('kernel_image', None)
         self.store = args.get('store', True)
+        self.rtt_log = args.get('rtt-log', False)
         self.test_cases = []
         self.excluded = []
 
