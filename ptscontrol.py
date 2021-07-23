@@ -126,6 +126,10 @@ class PTSLogger(win32com.server.connect.ConnectableServer):
                 if self._maximum_logging or log_type in logtype_whitelist:
                     self._callback.log(log_type, logtype_string, log_time,
                                        log_message, self._test_case_name)
+
+                if 'APICOM' in log_message or 'Failed to init stack' in log_message:
+                    self._callback.dongle_err()
+
         except Exception as e:
             logging.exception(repr(e))
             sys.exit("Exception in Log")

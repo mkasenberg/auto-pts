@@ -65,6 +65,10 @@ profiles = {'dis', 'gap', 'gatt', 'sm', 'l2cap', 'mesh', 'mmdl'}
 AUTO_PTS_LOCAL = "AUTO_PTS_LOCAL" in os.environ
 
 
+class DongleError(Exception):
+    pass
+
+
 class ClientCallback(PTSCallback):
     def __init__(self):
         super().__init__()
@@ -125,6 +129,9 @@ class ClientCallback(PTSCallback):
 
             # exit does not work, cause app is blocked in PTS.RunTestCase?
             sys.exit("Exception in Log")
+
+    def dongle_err(self):
+        self.exception.put(DongleError())
 
     def on_implicit_send(self, project_name, wid, test_case_name, description,
                          style):
@@ -705,6 +712,9 @@ def get_error_code(exc):
     elif isinstance(exc, xmlrpc.client.Fault):
         error_code = ptstypes.E_XML_RPC_ERROR
 
+    elif isinstance(exc, DongleError):
+        error_code = ptstypes.E_DONGLE_ERROR
+
     elif error_code is None:
         error_code = ptstypes.E_FATAL_ERROR
 
@@ -757,7 +767,7 @@ def run_test_case_thread_entry(pts, test_case, exceptions):
 
     if AUTO_PTS_LOCAL:  # set fake status and return
         statuses = ["PASS", "INCONC", "FAIL", "UNKNOWN VERDICT: NONE",
-                    "BTP ERROR", "XML-RPC ERROR", "BTP TIMEOUT"]
+                    "BTP ERROR", "XML-RPC ERROR", "BTP TIMEOUT", "DONGLE ERROR"]
         test_case.status = random.choice(statuses)
         return
 
