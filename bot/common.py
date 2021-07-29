@@ -41,6 +41,9 @@ from oauth2client import file, client, tools
 
 import autoptsclient_common as autoptsclient
 from autoptsclient_common import CliParser, Client
+from xmlrpc.client import ServerProxy
+from pathlib import Path
+from utils import InterruptableThread
 
 SCOPES = 'https://www.googleapis.com/auth/drive'
 CLIENT_SECRET_FILE = 'client_secret.json'
@@ -397,10 +400,25 @@ class Drive(GDrive):
         self.cd(dir_)
         return "{}".format(dir_.get('webViewLink'))
 
-    def upload(self, f):
-        print("Uploading {} ...".format(f))
-        self.cp(f)
-        print("Done")
+    def upload(self, file, retry=3):
+        print("Uploading {} ...".format(file))
+
+        while True:
+            thread = InterruptableThread(target=self.cp(file),
+                                         args=file, daemon=True)
+            thread.start()
+            thread.join(timeout=60*60.0)
+
+            if thread.is_alive():
+                print("Fail during upload")
+                thread.interrupt()
+                retry -= 1
+            else:
+                print("Done")
+                break
+
+            if retry > 0:
+                print("Retry uploading {} ...".format(file))
 
     def upload_folder(self, folder, excluded=None):
         def recursive(directory):
