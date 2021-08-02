@@ -58,7 +58,7 @@ class ZephyrCtl:
         """Constructor."""
         log("%s.%s kernel_image=%s tty_file=%s board_name=%s",
             self.__class__, self.__init__.__name__, args.kernel_image,
-            args.tty_file, args.board)
+            args.tty_file, args.board_name)
 
         self.debugger_snr = None
         self.kernel_image = args.kernel_image
@@ -66,9 +66,9 @@ class ZephyrCtl:
         self.hci = args.hci
         self.native = None
 
-        if self.tty_file and args.board:  # DUT is a hardware board, not QEMU
+        if self.tty_file and args.board_name:  # DUT is a hardware board, not QEMU
             self.get_debugger_snr()
-            self.board = Board(args.board, args.kernel_image, self)
+            self.board = Board(args.board_name, args.kernel_image, self)
         else:  # DUT is QEMU or a board that won't be reset
             self.board = None
 
@@ -319,7 +319,7 @@ class Board:
                                          shell=False,
                                          stdout=self.iutctl.iut_log_file,
                                          stderr=self.iutctl.iut_log_file)
-        if reset_process.wait():
+        if reset_process.wait(10.0):
             logging.error("openocd reset failed")
 
     @staticmethod

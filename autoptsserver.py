@@ -296,7 +296,15 @@ class Server(threading.Thread):
                            str(self._args.srv_port) + ':\n' + traceback.format_exc())
 
     def request_recovery(self):
-        self.terminate('Recovery request')
+        self.pts.unregister_ptscallback()
+        self.pts.stop()
+
+        if self._args.ykush_ports:
+            turn_on_dongle(self._args.ykush_ports)
+
+        self.pts.delete_temp_workspace()
+        self.pts.restart_pts()
+        # self.terminate('Recovery request')
 
     def terminate(self, msg):
         try:

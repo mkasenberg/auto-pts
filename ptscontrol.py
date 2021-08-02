@@ -60,7 +60,7 @@ logtype_whitelist = [ptstypes.PTS_LOGTYPE_START_TEST,
                      ptstypes.PTS_LOGTYPE_FINAL_VERDICT]
 
 PTS_WORKSPACE_FILE_EXT = ".pqw6"
-PTS_START_LOCK = threading.Lock()
+PTS_START_LOCK = threading.RLock()
 
 
 def pts_start_lock_wrapper(func):
@@ -258,6 +258,7 @@ class PyPTS:
 
     """
 
+    @pts_start_lock_wrapper
     def __init__(self):
         """Constructor"""
         log("%s", self.__init__.__name__)
@@ -370,6 +371,7 @@ class PyPTS:
 
         func(*args, **kwds)
 
+    @pts_start_lock_wrapper
     def recover_pts(self):
         """Recovers PTS from errors occured during RunTestCase call.
 
@@ -398,6 +400,7 @@ class PyPTS:
 
         self._recov_in_progress = False
 
+    @pts_start_lock_wrapper
     def restart_pts(self):
         """Restarts PTS
 
@@ -486,6 +489,10 @@ class PyPTS:
 
         self._pts.CreateWorkspace(bd_addr, pts_file_path, workspace_name,
                                   workspace_path)
+
+    def delete_temp_workspace(self):
+        if self._temp_workspace_path and os.path.exists(self._temp_workspace_path):
+            os.remove(self._temp_workspace_path)
 
     @staticmethod
     def _get_own_workspaces():
@@ -793,6 +800,7 @@ class PyPTS:
 
         return address
 
+    @pts_start_lock_wrapper
     def connect_to_dongle(self):
         device_to_connect = None
         devices = self._pts.GetDeviceList()
@@ -833,6 +841,7 @@ class PyPTS:
 
         self.add_recov(self.register_ptscallback, callback)
 
+    @pts_start_lock_wrapper
     def unregister_ptscallback(self):
         """Unregisters the testcase.PTSCallback callback"""
 
