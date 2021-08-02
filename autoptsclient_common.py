@@ -480,7 +480,7 @@ def init_pts(args, tc_db_table_name=None, proxy_list=None):
             break
 
     if exeption_msg:
-        raise Exception(exeption_msg, proxy_list)
+        raise Exception(exeption_msg)
 
     return proxy_list
 
@@ -1027,24 +1027,14 @@ def run_test_cases(ptses, test_case_instances, args):
 
 
 class CliParser(argparse.ArgumentParser):
-    def __init__(self, description, board_names=None):
-        argparse.ArgumentParser.__init__(self, description=description)
+    def __init__(self, description, board_names=None, add_help=True):
+        super().__init__(description=description, add_help=add_help)
 
         self.add_argument("-i", "--ip_addr", nargs="+",
                           help="IP address of the PTS automation servers")
 
         self.add_argument("-l", "--local_addr", nargs="+", default=None,
                           help="Local IP address of PTS automation client")
-
-        self.add_argument("workspace",
-                          help="Path to PTS workspace file to use for "
-                               "testing. It should have pqw6 extension. "
-                               "The file should be located on the "
-                               "machine, where automation server is running.")
-
-        self.add_argument("kernel_image", nargs='?', default=None,
-                          help="OS kernel image to be used for testing,"
-                               "e.g. elf file for qemu, exe for native.")
 
         self.add_argument("-a", "--bd-addr",
                           help="Bluetooth device address of the IUT")
@@ -1105,7 +1095,7 @@ class CliParser(argparse.ArgumentParser):
                                    "with OS running on hardware will be done over "
                                    "this TTY. Hence, QEMU will not be used.")
 
-            self.add_argument("-b", "--board",
+            self.add_argument("-b", "--board", dest='board_name',
                               help="Used DUT board. This option is used to "
                                    "select DUT reset command that is run before "
                                    "each test case. If board is not specified DUT "
@@ -1128,18 +1118,28 @@ class Client:
 
     """
 
-    def __init__(self, get_iut, project):
+    def __init__(self, get_iut, project, boards=None):
+        """
+        param get_iut: function from autoptsprojects.<project>.iutctl
+        param project: name of project
+        param boards: name list of supported boards
+        param args: parsed argument namespace
+        """
         self.test_cases = None
         self.get_iut = get_iut
         self.store_tag = project + '_'
+        self.boards = boards
         self.ptses = []
+        self.args = None
+        self.arg_parser = CliParser("PTS automation client", self.boards)
+        self.add_positional_args()
         setup_project_name(project)
 
-    def start(self):
+    def start(self, args=None):
         """Start main with exception handling."""
 
         try:
-            self.main()
+            return self.main(args)
         except KeyboardInterrupt:
             try:
                 self.exit_thread()
@@ -1173,7 +1173,7 @@ class Client:
             if not done:
                 threading.Thread(target=schedule_next_exit, args=(0.5,)).start()
 
-    def main(self):
+    def main(self, args=None):
         """Main."""
 
         # Workaround for logging error: "UnicodeEncodeError: 'charmap' codec can't
@@ -1182,7 +1182,8 @@ class Client:
         # each time log() is called.
         _locale._getdefaultlocale = (lambda *arg: ['en_US', 'utf8'])
 
-        args = self.parse_args()
+        args = self.parse_args(args)
+        self.args = args
 
         # root privileges only needed for native mode.
         if args.hci is not None:
@@ -1192,7 +1193,7 @@ class Client:
             sys.exit("Please do not run this program as root.")
 
         if args.store:
-            tc_db_table_name = self.store_tag + str(args.board)
+            tc_db_table_name = self.store_tag + str(args.board_name)
         else:
             tc_db_table_name = None
 
@@ -1208,7 +1209,7 @@ class Client:
         self.setup_project_pixits(self.ptses)
         self.setup_test_cases(self.ptses)
 
-        run_test_cases(self.ptses, self.test_cases, args)
+        status_count, results_dict, regressions = run_test_cases(self.ptses, self.test_cases, args)
 
         self.cleanup()
         shutdown_pts(self.ptses)
@@ -1216,18 +1217,36 @@ class Client:
         print("\nBye!")
         sys.stdout.flush()
 
-    def parse_args(self):
-        """Parses command line arguments and options"""
+        return status_count, results_dict, regressions
 
-        arg_parser = CliParser("PTS automation client")
-        args = arg_parser.parse_args()
+    def parse_args(self, arg_ns=None):
+        """Parses command line arguments and options
+        param arg_ns: namespace with already parsed args
+        """
+        args = self.arg_parser.parse_args(None, arg_ns)
+
+        if args.hci is None:
+            args.qemu_bin = getattr(autoprojects.iutctl, 'QEMU_BIN', None)
 
         self.check_args(args)
 
         return args
 
+    def add_positional_args(self):
+        self.arg_parser.add_argument("workspace", nargs='?', default=None,
+                                     help="Path to PTS workspace file to use for "
+                                          "testing. It should have pqw6 extension. "
+                                          "The file should be located on the "
+                                          "machine, where automation server is running.")
+
+        self.arg_parser.add_argument("kernel_image", nargs='?', default=None,
+                                     help="OS kernel image to be used for testing,"
+                                          "e.g. elf file for qemu, exe for native.")
+
     def check_args(self, args):
         """Sanity check command line arguments"""
+
+        assert args.workspace
 
         qemu_bin = args.qemu_bin
 
@@ -1251,7 +1270,8 @@ class Client:
             elif (not tty_file.startswith("/dev/tty") and
                   not tty_file.startswith("/dev/pts")):
                 sys.exit("%s is not a TTY nor COM file!" % repr(tty_file))
-            elif not os.path.exists(tty_file):
+            elif not os.path.exists(tty_file) and \
+                    not os.path.exists('COM' + str(int(tty_file["/dev/ttyS".__len__():]) + 1)):
                 sys.exit("%s TTY file does not exist!" % repr(tty_file))
         elif 'btpclient_path' in args:
             if not os.path.exists(args.btpclient_path):
@@ -1271,9 +1291,8 @@ class Client:
 
         args.superguard = 60 * args.superguard
 
-    # Overwrite those
     def init_iutctl(self, args):
-        sys.exit("Client.init_iutctl not implemented")
+        autoprojects.iutctl.init(args)
 
     def setup_project_pixits(self, ptses):
         setup_project_pixits(ptses)
@@ -1282,7 +1301,7 @@ class Client:
         self.test_cases = setup_test_cases(ptses)
 
     def cleanup(self):
-        sys.exit("Client.cleanup not implemented")
+        autoprojects.iutctl.cleanup()
 
 
 def run_recovery(args, ptses):
