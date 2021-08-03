@@ -343,6 +343,8 @@ def multi_main(args, queue, superguard):
         srv.start()
         superguard.add_server(srv)
         sleep(5)
+        if len(servers) != len(args.srv_port):
+            kill_all_processes("Fts.exe")
 
     while queue.empty():
         for srv in servers:
