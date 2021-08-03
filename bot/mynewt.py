@@ -338,7 +338,7 @@ def main(cfg):
 
     args = cfg['auto_pts']
 
-    repos_info = bot.common.update_repos(args['project_path'], cfg["git"])
+    repos_info = bot.common.update_repos(args['project_path'], cfg.get('git', {}))
     repo_status = make_repo_status(repos_info)
 
     summary, results, descriptions, regressions = \

@@ -349,7 +349,8 @@ def main(cfg):
                                         'zephyr', 'zephyr.elf')
 
     zephyr_hash = bot.common.update_repos(args['project_path'],
-                                          cfg["git"])['zephyr']
+                                          cfg.get('git', {})) \
+        .get('zephyr', {'desc': '', 'commit': ''})
 
     if 'ykush' in args:
         autoptsclient.board_power(args['ykush'], True)
