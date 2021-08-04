@@ -611,7 +611,7 @@ def test_cases_server(ptses):
     ]
 
     test_case_name_list = pts.get_test_case_list('GATT')
-    test_cases = []
+    tc_list = []
 
     for tc_name in test_case_name_list:
         if not tc_name.startswith('GATT/SR'):
@@ -625,10 +625,10 @@ def test_cases_server(ptses):
                 instance = custom_tc
                 break
 
-        test_cases.append(instance)
+        tc_list.append(instance)
 
     if len(ptses) < 2:
-        return test_cases
+        return tc_list
 
     pts2 = ptses[1]
     pre_conditions_lt2 = [TestFunc(lambda: pts2.update_pixit_param(
@@ -650,7 +650,7 @@ def test_cases_server(ptses):
                        generic_wid_hdl=gatt_wid_hdl),
     ]
 
-    return test_cases + test_cases_lt2
+    return tc_list + test_cases_lt2
 
 
 def test_cases_client(pts):
@@ -699,7 +699,7 @@ def test_cases_client(pts):
     ]
 
     test_case_name_list = pts.get_test_case_list('GATT')
-    test_cases = []
+    tc_list = []
 
     for tc_name in test_case_name_list:
         if not tc_name.startswith('GATT/CL'):
@@ -713,9 +713,9 @@ def test_cases_client(pts):
                 instance = custom_tc
                 break
 
-        test_cases.append(instance)
+        tc_list.append(instance)
 
-    return test_cases
+    return tc_list
 
 
 def test_cases(ptses):
@@ -725,7 +725,7 @@ def test_cases(ptses):
 
     stack.gap_init(iut_device_name)
 
-    test_cases = test_cases_client(ptses[0])
-    test_cases += test_cases_server(ptses)
+    tc_list = test_cases_client(ptses[0])
+    tc_list += test_cases_server(ptses)
 
-    return test_cases
+    return tc_list
