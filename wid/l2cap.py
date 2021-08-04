@@ -130,7 +130,7 @@ def hdl_wid_38(desc):
     :return:
     """
     stack = get_stack()
-    channel = stack.l2cap._chan_lookup_id(0)
+    channel = stack.l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
@@ -196,7 +196,7 @@ def hdl_wid_43(desc):
     """
     stack = get_stack()
     l2cap = stack.l2cap
-    channel = l2cap._chan_lookup_id(0)
+    channel = l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
@@ -278,7 +278,7 @@ def hdl_wid_55(desc):
     """
     stack = get_stack()
     l2cap = stack.l2cap
-    channel = l2cap._chan_lookup_id(0)
+    channel = l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
@@ -303,7 +303,7 @@ def hdl_wid_56(desc):
 def hdl_wid_57(desc):
     stack = get_stack()
     l2cap = stack.l2cap
-    channel = l2cap._chan_lookup_id(0)
+    channel = l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
@@ -349,7 +349,7 @@ def hdl_wid_102(desc):
 
 def hdl_wid_103(desc):
     stack = get_stack()
-    chan = stack.l2cap._chan_lookup_id(0)
+    chan = stack.l2cap.chan_lookup_id(0)
     time.sleep(10)
     btp.l2cap_reconfigure(None, None, chan.our_mtu + 1,
                           [chan.id for chan in stack.l2cap.channels])
@@ -481,7 +481,7 @@ def hdl_wid_256(desc):
 def hdl_wid_257(desc):
     stack = get_stack()
     l2cap = stack.l2cap
-    channel = l2cap._chan_lookup_id(0)
+    channel = l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
@@ -493,7 +493,7 @@ def hdl_wid_257(desc):
 def hdl_wid_258(desc):
     stack = get_stack()
     l2cap = stack.l2cap
-    channel = l2cap._chan_lookup_id(0)
+    channel = l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
@@ -525,7 +525,7 @@ def hdl_wid_261(desc):
     time.sleep(2)
     stack = get_stack()
     channels = stack.l2cap.rx_data_get_all(10)
-    chan = stack.l2cap._chan_lookup_id(0)
+    chan = stack.l2cap.chan_lookup_id(0)
     if not (len(channels) == 1):
         return False
 
@@ -537,7 +537,7 @@ def hdl_wid_261(desc):
 def hdl_wid_262(desc):
     stack = get_stack()
     l2cap = stack.l2cap
-    channel = l2cap._chan_lookup_id(0)
+    channel = l2cap.chan_lookup_id(0)
     if not channel:
         return False
 
