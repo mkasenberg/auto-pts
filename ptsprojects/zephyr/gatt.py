@@ -16,15 +16,13 @@
 """GATT test cases"""
 
 try:
-    from ptsprojects.testcase import TestCase, TestCmd, TestFunc, \
-        TestFuncCleanUp, MMI
+    from ptsprojects.testcase import TestFunc
     from ptsprojects.zephyr.ztestcase import ZTestCase, ZTestCaseSlave
 except ImportError:  # running this module as script
     import sys
     sys.path.append("../..")  # to be able to locate the following imports
 
-    from ptsprojects.testcase import TestCase, TestCmd, TestFunc, \
-        TestFuncCleanUp, MMI
+    from ptsprojects.testcase import TestFunc
     from ptsprojects.zephyr.ztestcase import ZTestCase
 
 from pybtp import btp
@@ -197,7 +195,6 @@ def test_cases_server(ptses):
 
     pts = ptses[0]
 
-    pts_bd_addr = pts.q_bd_addr
     stack = get_stack()
 
     pre_conditions = [TestFunc(btp.core_reg_svc_gap),
