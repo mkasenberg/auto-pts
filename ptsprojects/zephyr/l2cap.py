@@ -32,7 +32,7 @@ from pybtp import btp, defs
 from pybtp.types import Addr, L2capSecLevels
 from ptsprojects.stack import get_stack, L2cap
 from autoptsclient_common import get_unique_name
-from wid import l2cap_wid_hdl
+from wid import l2cap_wid_hdl, l2cap_wid_hdl_one_ecfc_chan
 
 
 le_psm = 128
@@ -202,6 +202,9 @@ def test_cases(ptses):
         ZTestCase("L2CAP", "L2CAP/ECFC/BV-23-C",
                   pre_conditions,
                   generic_wid_hdl=l2cap_wid_hdl),
+        ZTestCase("L2CAP", "L2CAP/ECFC/BV-25-C",
+                  pre_conditions_eatt,
+                  generic_wid_hdl=l2cap_wid_hdl_one_ecfc_chan),
         ZTestCase("L2CAP", "L2CAP/ECFC/BI-01-C",
                   pre_conditions,
                   generic_wid_hdl=l2cap_wid_hdl),
