@@ -41,6 +41,7 @@ import argparse
 import shutil
 import xmlrpc.client
 import ctypes
+import threading
 from pathlib import Path
 
 import win32com.client
@@ -59,6 +60,19 @@ logtype_whitelist = [ptstypes.PTS_LOGTYPE_START_TEST,
                      ptstypes.PTS_LOGTYPE_FINAL_VERDICT]
 
 PTS_WORKSPACE_FILE_EXT = ".pqw6"
+PTS_START_LOCK = threading.Lock()
+
+
+def pts_start_lock_wrapper(func):
+    def wrapper(*args):
+        try:
+            PTS_START_LOCK.acquire()
+            ret = func(*args)
+        finally:
+            PTS_START_LOCK.release()
+        return ret
+
+    return wrapper
 
 
 class PTSLogger(win32com.server.connect.ConnectableServer):
@@ -399,6 +413,7 @@ class PyPTS:
         time.sleep(1)  # otherwise there are COM errors occasionally
         self.start_pts()
 
+    @pts_start_lock_wrapper
     def start_pts(self):
         """Starts PTS
 
