@@ -33,6 +33,7 @@ import time
 import traceback
 import xml.etree.ElementTree as ElementTree
 import xmlrpc.client
+import signal
 from distutils.spawn import find_executable
 from xmlrpc.server import SimpleXMLRPCServer
 
@@ -63,6 +64,23 @@ profiles = {'dis', 'gap', 'gatt', 'sm', 'l2cap', 'mesh', 'mmdl'}
 # be used. When FakeProxy is used autoptsserver on Windows will
 # not be contacted.
 AUTO_PTS_LOCAL = "AUTO_PTS_LOCAL" in os.environ
+
+SIGINT_LOCK = threading.Lock()
+
+
+def thread_lock_wrapper(lock):
+    def _thread_lock_wrapper(func):
+        def wrapper(*args):
+            try:
+                lock.acquire()
+                ret = func(*args)
+            finally:
+                lock.release()
+            return ret
+
+        return wrapper
+
+    return _thread_lock_wrapper
 
 
 class ClientCallback(PTSCallback):
@@ -236,6 +254,7 @@ class CallbackThread(threading.Thread):
         self.server.register_instance(self.callback)
         self.server.register_introspection_functions()
         self.server.serve_forever()
+        self.server.server_close()
 
     def stop(self):
         thread = threading.Thread(target=self._shutdown_thread)
@@ -243,7 +262,8 @@ class CallbackThread(threading.Thread):
         thread.join()
 
     def _shutdown_thread(self):
-        self.server.shutdown()
+        if self.server:
+            self.server.shutdown()
 
     def set_current_test_case(self, name):
         log("%s.%s %s", self.__class__.__name__, self.set_current_test_case.__name__, name)
@@ -410,10 +430,11 @@ def init_pts_thread_entry(proxy, local_address, local_port, workspace_path,
     proxy.enable_maximum_logging(enable_max_logs)
 
 
-def init_pts(args, tc_db_table_name=None):
+@thread_lock_wrapper(SIGINT_LOCK)
+def init_pts(args, tc_db_table_name=None, proxy_list=None):
     """Initialization procedure for PTS instances"""
 
-    proxy_list = []
+    proxy_list = [] if proxy_list is None else proxy_list
     thread_list = []
     exceptions = queue.Queue()
 
@@ -428,14 +449,14 @@ def init_pts(args, tc_db_table_name=None):
                 "http://{}:{}/".format(server_addr, server_port),
                 allow_none=True, )
 
+        proxy_list.append(proxy)
         print("(%r) Starting PTS %s:%s ..." % (id(proxy), server_addr, server_port))
 
         thread = threading.Thread(target=init_pts_thread_entry,
                                   args=(proxy, local_addr, local_port, args.workspace,
                                         args.bd_addr, args.enable_max_logs, exceptions))
-        thread.start()
 
-        proxy_list.append(proxy)
+        thread.start()
         thread_list.append(thread)
 
     if tc_db_table_name:
@@ -443,7 +464,9 @@ def init_pts(args, tc_db_table_name=None):
         TEST_CASE_DB = TestCaseTable(tc_db_table_name)
 
     for index, thread in enumerate(thread_list):
-        thread.join(timeout=180.0)
+        t = time.time()
+        while time.time() < t + 180.0 and thread.is_alive():
+            thread.join(1.0)
 
         # check init completed
         if thread.is_alive():
@@ -463,9 +486,12 @@ def init_pts(args, tc_db_table_name=None):
 
 
 def shutdown_pts(ptses):
-    for pts in ptses:
+    for pts in [p for p in ptses]:
         pts.unregister_xmlrpc_ptscallback()
-        pts.callback_thread.stop()
+        if isinstance(pts.callback_thread, CallbackThread) \
+                and pts.callback_thread.is_alive():
+            pts.callback_thread.stop()
+            ptses.remove(pts)
 
 
 def get_result_color(status):
@@ -872,8 +898,12 @@ def run_test_case(ptses, test_case_instances, test_case_name, stats,
             pts_thread.start()
 
         # Wait till every PTS instance finish executing test case
-        for pts_thread in pts_threads:
-            pts_thread.join()
+        # Under Windows join() without timeout blocks SIGINT
+        while len(pts_threads) > 0:
+            for pts_thread in pts_threads:
+                pts_thread.join(1.0)
+                if not pts_thread.is_alive():
+                    pts_threads.remove(pts_thread)
 
         logger.removeHandler(file_handler)
 
@@ -1102,21 +1132,46 @@ class Client:
         self.test_cases = None
         self.get_iut = get_iut
         self.store_tag = project + '_'
-        self.ptses = None
+        self.ptses = []
         setup_project_name(project)
 
     def start(self):
         """Start main with exception handling."""
+
         try:
             self.main()
-        except KeyboardInterrupt:  # Ctrl-C
-            shutdown_pts(self.ptses)
-            self.cleanup()
+        except KeyboardInterrupt:
+            try:
+                self.exit_thread()
+            except KeyboardInterrupt:
+                signal.raise_signal(signal.SIGTERM)
         except Exception as exc:
             logging.exception(exc)
-            shutdown_pts(self.ptses)
-            self.cleanup()
+            self.exit_thread()
             sys.exit(1)
+
+    def exit_thread(self):
+        def schedule_next_exit(off_time):
+            time.sleep(off_time)
+            threading.Thread(target=self.exit_thread).start()
+
+        locked = False
+        done = False
+        try:
+            locked = SIGINT_LOCK.acquire(blocking=False)
+
+            if locked:
+                shutdown_pts(self.ptses)
+                self.cleanup()
+                done = True
+        except Exception as e:
+            print(e)
+        finally:
+            if locked:
+                SIGINT_LOCK.release()
+
+            if not done:
+                threading.Thread(target=schedule_next_exit, args=(0.5,)).start()
 
     def main(self):
         """Main."""
@@ -1141,7 +1196,7 @@ class Client:
         else:
             tc_db_table_name = None
 
-        self.ptses = init_pts(args, tc_db_table_name)
+        init_pts(args, tc_db_table_name, self.ptses)
 
         btp.init(self.get_iut)
         self.init_iutctl(args)
@@ -1251,7 +1306,8 @@ def run_recovery(args, ptses):
     time.sleep(20)  # Give server some time to restart
 
     shutdown_pts(ptses)
-    init_pts(ptses, args)
+    ptses.clear()
+    init_pts(args, None, ptses)
 
     setup_project_pixits(ptses)
 
