@@ -1259,7 +1259,7 @@ class Client:
 
 def run_recovery(args, ptses):
     def wait_for_server_restart(pts):
-        for i in range(60):
+        for i in range(args.superguard if args.superguard else 60):
             try:
                 pts.system.listMethods()
                 break
@@ -1272,13 +1272,12 @@ def run_recovery(args, ptses):
     if ykush:
         board_power(ykush, False)
 
-    # autopts server could already restart by itself,
     for pts in ptses:
         wait_for_server_restart(pts)
 
     try:
         for pts in ptses:
-            recover_autoptsserver(pts)  # but restart it anyway
+            pts.request_recovery()
     except ConnectionRefusedError as e:
         logging.exception(e)
         traceback.print_exc()
@@ -1289,10 +1288,13 @@ def run_recovery(args, ptses):
     if ykush:
         board_power(ykush, True)
 
-    shutdown_pts(ptses)
+    for pts in ptses:
+        if isinstance(pts.callback_thread, CallbackThread):
+            pts.callback_thread.stop()
     ptses.clear()
     init_pts(args, ptses)
     setup_project_pixits(ptses)
+    log('Recovery finished')
 
 
 def setup_project_name(project):
@@ -1316,15 +1318,6 @@ def setup_test_cases(ptses):
             test_cases += mod.test_cases(ptses)
 
     return test_cases
-
-
-def recover_autoptsserver(server):
-    if server:
-        print('Attempting to recover autoptsserver')
-        log('Attempting to recover autoptsserver')
-        server.request_recovery()
-        return 0
-    return 1
 
 
 def board_power(ykush_port, on=True):
