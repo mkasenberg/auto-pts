@@ -604,7 +604,7 @@ def zephyr_pr_job(cron, cfg, pr_cfg):
 def zephyr_job(cfg, included='', excluded='', bisect=None):
     print('Started Zephyr Job', cfg)
 
-    update_zephyr_tools()
+    # update_zephyr_tools()
 
     if included and not included.isspace():
         included = ' -c {}'.format(included)
