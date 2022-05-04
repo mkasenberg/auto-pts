@@ -456,8 +456,7 @@ def update_zephyr_tools():
     if version_tag is None:
         sys.exit('Parsing zephyr toolchain failed!')
 
-    cmd = ['bash.exe', '-c', '-i',
-           '{} {}'.format(installer_file, version_tag)]  # bash.exe == wsl
+    cmd = ['{} {}'.format(installer_file, version_tag)]
     check_call(cmd, cwd=script_dir)
 
 
