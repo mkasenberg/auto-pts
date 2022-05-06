@@ -25,6 +25,7 @@ import time
 from abc import abstractmethod
 
 import pylink
+import serial
 
 from autopts.pybtp import defs
 from autopts.pybtp.types import BTPError
@@ -388,3 +389,50 @@ class BTMON:
             self.btmon_process.send_signal(signal.SIGINT)
             self.btmon_process.wait()
             self.btmon_process = None
+
+
+class BTPSerial(serial.Serial):
+    def accept(self, timeout=10.0):
+        """Accept incomming Zephyr connection
+
+        timeout - accept timeout in seconds"""
+        pass
+
+    def read(self, timeout=20.0):
+        """Read BTP data from socket
+
+        timeout - read timeout in seconds"""
+
+        toread_hdr_len = HDR_LEN
+        self.apply_settings({'timeout': timeout})
+
+        # Gather frame header
+        hdr = super().read(toread_hdr_len)
+        nbytes = len(hdr)
+        logging.debug("Read %d bytes", nbytes)
+        if nbytes == 0 and toread_hdr_len != 0:
+            raise socket.error
+
+        tuple_hdr = dec_hdr(hdr)
+        toread_data_len = tuple_hdr.data_len
+
+        logging.debug("Received: hdr: %r %r", tuple_hdr, hdr)
+
+        # Gather optional frame data
+        data = super().read(toread_data_len)
+
+        tuple_data = bytes(str(dec_data(data)), 'utf-8').decode("unicode_escape").replace("b'", "'")
+
+        log("Received data: %r, %r", tuple_data, data)
+        self.apply_settings({'timeout': 0})
+        return tuple_hdr, dec_data(data)
+
+    def send(self, svc_id, op, ctrl_index, data):
+        """Send BTP formated data over socket"""
+        logging.debug("%s, %r %r %r %r",
+                      self.send.__name__, svc_id, op, ctrl_index, str(data))
+
+        frame = enc_frame(svc_id, op, ctrl_index, data)
+
+        logging.debug("sending frame %r", frame.hex())
+        super().write(frame)
