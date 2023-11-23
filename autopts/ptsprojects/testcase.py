@@ -774,6 +774,8 @@ class TestCase(PTSCallback):
                 self.post_run.__name__)
             self.tc_subproc.communicate(input=b'#close\n')
             self.lf_subproc.close()
+            self.lf_subproc = None
+            self.tc_subproc = None
 
         subproc_dir = (os.path.dirname(os.path.abspath(__file__)) + "/" +
                        self.ptsproject_name + "/")
@@ -798,6 +800,8 @@ class TestCase(PTSCallback):
 
             self.tc_subproc.communicate(input=b'#close\n')
             self.lf_subproc.close()
+            self.lf_subproc = None
+            self.tc_subproc = None
 
 
 class TestCaseLT1(TestCase):
