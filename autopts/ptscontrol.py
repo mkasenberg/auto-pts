@@ -54,7 +54,7 @@ from autopts.winutils import get_pid_by_window_title, kill_all_processes
 
 logging = root_logging.getLogger('server')
 log = logging.debug
-
+RESTART_BPV_MAX_TC_COUNT = 500
 
 logtype_whitelist = [ptstypes.PTS_LOGTYPE_START_TEST,
                      ptstypes.PTS_LOGTYPE_END_TEST,
@@ -355,6 +355,7 @@ class PyPTS:
         self._com_sender = None
         self._preferred_device = device
         self._device = None
+        self._restart_bpv_count = 0
 
     def _init_attributes(self):
         """Initializes class attributes"""
@@ -500,6 +501,17 @@ class PyPTS:
             try:
                 self.stop_pts()
 
+                if self._restart_bpv_count == RESTART_BPV_MAX_TC_COUNT:
+                    # Workaround for Bluetooth Protocol Viewer leaks. You can see
+                    # in the Process Explorer that after each test case 2 new
+                    # process handles to PTS.exe are generated, but the old ones
+                    # are not being closed. It is a symptom that some resources
+                    # are not being freed and maybe this the cause of Windows crashes.
+                    self._restart_bpv_count = 0
+                    kill_all_processes('Fts.exe')
+                else:
+                    self._restart_bpv_count += 1
+
                 # Only if ykush available
                 self._replug_dongle()
 
@@ -513,6 +525,7 @@ class PyPTS:
                 # the only running instance of autoptsserver.py
                 if count_script_instances('autoptsserver.py') <= 1:
                     kill_all_processes('PTS.exe')
+                    kill_all_processes('Fts.exe')
 
         return True
 
@@ -774,6 +787,12 @@ class PyPTS:
 
             self.stop_test_case(project_name, test_case_name)
             self.recover_pts()
+        finally:
+            if self._restart_bpv_count == RESTART_BPV_MAX_TC_COUNT:
+                # Workaround for Bluetooth Protocol Viewer leaks.
+                self.recover_pts()
+            else:
+                self._restart_bpv_count += 1
 
         if not err:
             # Nonblocking methods will not throw exceptions
