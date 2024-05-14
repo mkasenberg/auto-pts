@@ -1452,6 +1452,8 @@ def run_recovery(args, ptses):
     if args.ykush:
         if sys.platform == 'win32':
             device_id = tty_to_com(args.tty_file)
+        elif args.tty_alias:
+            device_id = args.tty_alias
         else:
             device_id = args.tty_file
 

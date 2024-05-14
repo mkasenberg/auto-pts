@@ -309,6 +309,9 @@ else:
             import pyudev
             _pyudev = pyudev
 
+        if os.path.islink(serial_address):
+            serial_address = os.path.realpath(serial_address)
+
         context = _pyudev.Context()
         for device in context.list_devices(subsystem=subsystem):
             try:

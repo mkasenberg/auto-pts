@@ -98,6 +98,8 @@ class CliParser(argparse.ArgumentParser):
         self.add_argument("--max_server_restart_time", type=int, default=MAX_SERVER_RESTART_TIME,
                           help=argparse.SUPPRESS)
 
+        self.add_argument("--tty_alias", type=str, default='', help=argparse.SUPPRESS)
+
         if cli_support is None:
             return
 
