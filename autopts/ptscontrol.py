@@ -333,7 +333,7 @@ class PyPTS:
 
     """
 
-    def __init__(self, device=None):
+    def __init__(self, device=None, lite_start=False):
         """Constructor"""
         log("%s", self.__init__.__name__)
 
@@ -359,6 +359,7 @@ class PyPTS:
         self._com_sender = None
         self._preferred_device = device
         self._device = None
+        self.lite_start = lite_start
 
     def _init_attributes(self):
         """Initializes class attributes"""
@@ -530,6 +531,9 @@ class PyPTS:
 
         self._pts = win32com.client.Dispatch('ProfileTuningSuite_6.PTSControlServer')
 
+        if self.lite_start:
+            return True
+
         # The dispatched COM object cannot be passed between threads directly
         self._pts_dispatch_id = pythoncom.CoMarshalInterThreadInterfaceInStream(
             pythoncom.IID_IDispatch, self._pts)
@@ -595,6 +599,18 @@ class PyPTS:
                 # This is faster that ExitPTS. Moreover, the ExitPTS
                 # can fail to close the PTS due to a broken COM server.
                 try:
+                    del self._com_logger
+                    del self._com_sender
+                    del self._pts_logger
+                    del self._pts_sender
+                    del self._pts_dispatch_id
+                    del self._pts
+                    self._com_logger = None
+                    self._com_sender = None
+                    self._pts_logger = None
+                    self._pts_sender = None
+                    self._pts_dispatch_id = None
+                    self._pts = None
                     self._pts_proc.terminate()
                 except Exception as error:
                     logging.exception(repr(error))
@@ -982,6 +998,9 @@ class PyPTS:
     def get_bluetooth_address(self):
         """Returns PTS bluetooth address string"""
         log(self.get_bluetooth_address.__name__)
+
+        if self.lite_start:
+            return 'xxxxxxxxxxxx'
 
         address = None
         if self._device:

@@ -1,9 +1,7 @@
 #
 # auto-pts - The Bluetooth PTS Automation Framework
 #
-# Copyright (c) 2021, Intel Corporation.
-# Copyright (c) 2021, Codecoup.
-# Copyright (c) 2021, Nordic Semiconductor ASA.
+# Copyright (c) 2024, Codecoup.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms and conditions of the GNU General Public License,
@@ -15,6 +13,18 @@
 # more details.
 #
 
-from .nrf5x import *
+import logging
 
-board_type = 'nrf52840dk/nrf52840'
+from autopts.pybtp import btp
+from autopts.pybtp.types import WIDParams
+from autopts.wid import generic_wid_hdl
+from autopts.ptsprojects.stack import get_stack
+from autopts.pybtp.types import *
+
+log = logging.debug
+
+
+def pacs_wid_hdl(wid, description, test_case_name):
+    log(f'{pacs_wid_hdl.__name__}, {wid}, {description}, {test_case_name}')
+    return generic_wid_hdl(wid, description, test_case_name, [__name__, 'autopts.wid.pacs'])
+
