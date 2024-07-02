@@ -12,7 +12,9 @@
 # FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
 # more details.
 #
+import collections
 import copy
+import datetime
 import importlib
 import logging
 import os
@@ -21,19 +23,18 @@ import sys
 import shutil
 import time
 import json
+import traceback
 from pathlib import Path
 from argparse import Namespace
 from autopts import client as autoptsclient
+from autopts.bot.common_features import github, report, mail, google_drive
+from autopts.bot.common_features.report import REPORT_TXT
 from autopts.client import CliParser, Client, TestCaseRunStats, init_logging
 from autopts.config import MAX_SERVER_RESTART_TIME, TEST_CASES_JSON, ALL_STATS_JSON, TC_STATS_JSON, \
-    ALL_STATS_RESULTS_XML, TC_STATS_RESULTS_XML, BOT_STATE_JSON
-from autopts.ptsprojects.boards import get_free_device, get_tty, get_debugger_snr
+    ALL_STATS_RESULTS_XML, TC_STATS_RESULTS_XML, BOT_STATE_JSON, TMP_DIR, REPORT_README_MD, AUTOPTS_REPORT_FOLDER, \
+    REPORT_DIFF_TXT, REPORT_XLSX, IUT_LOGS_FOLDER, AUTOPTS_ROOT_DIR
+from autopts.ptsprojects.boards import get_free_device, get_tty, get_debugger_snr, release_device
 from autopts.ptsprojects.testcase_db import DATABASE_FILE
-
-PROJECT_DIR = os.path.dirname(  # auto-pts repo directory
-                os.path.dirname(  # autopts module directory
-                    os.path.dirname(  # bot module directory
-                        os.path.abspath(__file__))))  # this file directory
 
 log = logging.debug
 
@@ -50,6 +51,27 @@ def cleanup_tmp_files():
     for file in files:
         if os.path.exists(file):
             os.remove(file)
+
+
+def get_deepest_dirs(logs_tree, dst_tree, max_depth):
+    def recursive(directory, depth=3):
+        depth -= 1
+
+        for file in os.scandir(directory):
+            if file.is_dir():
+                if depth > 0:
+                    recursive(file.path, depth)
+                else:
+                    dst_file = os.path.join(dst_tree, file.name)
+                    try:
+                        shutil.move(file.path, dst_file)
+                    except BaseException as e:  # skip waiting for BPV to release the file
+                        try:
+                            shutil.copy(file.path, dst_file)
+                        except BaseException as e2:
+                            print(e2)
+
+    recursive(logs_tree, max_depth)
 
 
 class BuildAndFlashException(Exception):
@@ -401,21 +423,337 @@ class BotClient(Client):
                     self.ptses[0].get_test_case_description(project_name, test_case_name)
 
             all_stats.update_descriptions(descriptions)
-            all_stats.pts_ver = '{}'.format(self.ptses[0].get_version())
-            all_stats.platform = '{}'.format(self.ptses[0].get_system_model())
+            all_stats.pts_ver = str(self.ptses[0].get_version())
+            all_stats.platform = str(self.ptses[0].get_system_model())
+            all_stats.system_version = str(self.ptses[0].get_system_version())
         except:
             log('Failed to generate some stats.')
 
         return all_stats
 
     def start(self, args=None):
-        # Extend this method in a derived class to handle sending
-        # logs, reports, etc.
-        self.run_tests()
+        """
+        Extend this method in a derived class, if needed, to handle
+        sending logs, reports, etc.
+        """
+
+        if os.path.exists(BOT_STATE_JSON):
+            print(f'Continuing the previous terminated test run (remove {TMP_DIR} to start freshly)')
+
+            with open(BOT_STATE_JSON, "r") as f:
+                data = f.read()
+                bot_state = json.loads(data)
+                cfg = bot_state['config']
+                args = cfg['auto_pts']
+
+        else:
+            # Start fresh test run
+
+            bot_state = {}
+            pre_cleanup()
+
+            bot_state['start_time'] = time.time()
+
+            cfg = self.bot_config
+            args = cfg['auto_pts']
+            bot_state['config'] = cfg
+
+            if 'database_file' not in args:
+                args['database_file'] = DATABASE_FILE
+
+            if 'githubdrive' in cfg:
+                github.update_sources(cfg['githubdrive']['path'],
+                               cfg['githubdrive']['remote'],
+                               cfg['githubdrive']['branch'], True)
+
+            if 'git' in cfg:
+                bot_state['repos_info'] = github.update_repos(args['project_path'], cfg["git"])
+                bot_state['repo_status'] = report.make_repo_status(bot_state['repos_info'])
+            else:
+                bot_state['repos_info'] = {}
+                bot_state['repo_status'] = ''
+
+            if args.get('use_backup', False):
+                os.makedirs(os.path.dirname(TMP_DIR), exist_ok=True)
+
+                with open(BOT_STATE_JSON, "w") as f:
+                    f.write(json.dumps(bot_state, indent=4))
+
+        try:
+            stats = self.run_tests()
+        finally:
+            release_device(self.args.tty_file)
+
+        report_data = bot_state
+        report_data['end_time'] = time.time()
+        report_data['end_time_stamp'] = datetime.datetime.fromtimestamp(
+            report_data['end_time']).strftime("%Y_%m_%d_%H_%M_%S")
+        report_data['start_time_stamp'] = datetime.datetime.fromtimestamp(
+            bot_state['start_time']).strftime("%Y_%m_%d_%H_%M_%S")
+
+        report_data['status_count'] = stats.get_status_count()
+        report_data['tc_results'] = stats.get_results()
+        report_data['descriptions'] = stats.get_descriptions()
+        report_data['regressions'] = stats.get_regressions()
+        report_data['progresses'] = stats.get_progresses()
+        report_data['new_cases'] = stats.get_new_cases()
+        report_data['deleted_cases'] = []
+        report_data['pts_ver'] = stats.pts_ver
+        report_data['platform'] = stats.platform
+        report_data['system_version'] = stats.system_version
+        report_data['database_file'] = args['database_file']
+
+        report_data['tc_results'] = collections.OrderedDict(sorted(report_data['tc_results'].items()))
+
+        report_data['errata'] = report.get_errata(self.autopts_project_name)
+
+        report_data['pts_logs_folder'], report_data['pts_xml_folder'] = report.pull_server_logs(self.args)
+
+        report_data['report_xlsx'] = report.make_report_xlsx(report_data)
+        report_data['report_txt'] = report.make_report_txt(report_data)
+
+        if 'githubdrive' in cfg or 'gdrive' in cfg:
+            self.make_report_folder(report_data)
+
+            if 'gdrive' in cfg:
+                self.upload_logs_to_gdrive(report_data)
+
+            if 'githubdrive' in cfg:
+                self.upload_logs_to_github(report_data)
+
+        if 'mail' in cfg:
+            self.send_email(report_data)
+
+        print("Done")
 
     def run_tests(self):
         # Entry point of the simple client layer
         return super().start()
+
+    def make_readme_md(self, report_data):
+        """Creates README.md for Github logging repo
+        """
+        readme_file = REPORT_README_MD
+
+        Path(os.path.dirname(readme_file)).mkdir(parents=True, exist_ok=True)
+
+        with open(readme_file, 'w') as f:
+            readme_body = f'''# AutoPTS report
+
+    Start time: {report_data["start_time_stamp"]}
+
+    End time: {report_data["end_time_stamp"]}
+
+    PTS version: {report_data["pts_ver"]}
+
+    Repositories:
+
+'''
+            f.write(readme_body)
+
+            for name, info in report_data['repos_info'].items():
+                f.write(f'\t{name}: {info["commit"]} [{info["desc"]}]\n')
+
+        return readme_file
+
+    def make_report_folder(self, report_data):
+        """Creates folder containing .txt and .xlsx reports, pulled logs
+        from autoptsserver, iut logs and additional README.md.
+        """
+        cfg = report_data['config']
+
+        report_data['report_folder'] = AUTOPTS_REPORT_FOLDER
+        shutil.rmtree(report_data['report_folder'], ignore_errors=True)
+        Path(report_data['report_folder']).mkdir(parents=True, exist_ok=True)
+
+        if 'githubdrive' in cfg:
+            report_folder_name = os.path.basename(report_data['report_folder'])
+
+            report_data['old_report_txt'] = os.path.join(cfg['githubdrive']['path'],
+                                                         cfg['githubdrive']['subdir'],
+                                                         report_folder_name, REPORT_TXT)
+
+            report_data['report_diff_txt'], report_data['deleted_cases'] = report.make_report_diff(report_data)
+
+        report_data['readme_file'] = self.make_readme_md(report_data)
+
+        attachments = [
+            REPORT_DIFF_TXT,
+            REPORT_TXT,
+            (REPORT_TXT, f'report_{report_data["start_time_stamp"]}.txt'),
+            (REPORT_XLSX, f'report_{report_data["start_time_stamp"]}.xlsx'),
+            REPORT_README_MD,
+            report_data['database_file'],
+            report_data['pts_xml_folder'],
+        ]
+
+        iut_logs_new = os.path.join(report_data['report_folder'], 'iut_logs')
+        pts_logs_new = os.path.join(report_data['report_folder'], 'pts_logs')
+        get_deepest_dirs(IUT_LOGS_FOLDER, iut_logs_new, 3)
+        get_deepest_dirs(report_data['pts_logs_folder'], pts_logs_new, 3)
+
+        self.generate_attachments(report_data, attachments)
+
+        self.pack_report_folder(report_data, attachments)
+
+    def generate_attachments(self, report_data, attachments):
+        """Overwrite this if needed"""
+        pass
+
+    def pack_report_folder(self, report_data, attachments):
+        report_dir = report_data['report_folder']
+
+        for item in attachments:
+            if isinstance(item, tuple):
+                src_file, dst_file = item
+                dst_file = os.path.join(report_dir, dst_file)
+            else:
+                src_file = item
+                dst_file = os.path.join(report_dir, os.path.basename(src_file))
+
+            try:
+                if not os.path.exists(src_file):
+                    log(f'The file {src_file} does not exist')
+                    continue
+
+                if os.path.isdir(src_file):
+                    try:
+                        shutil.move(src_file, dst_file)
+                        continue
+                    except:  # skip waiting for BPV to release the file
+                        pass
+
+                try:
+                    shutil.copy(src_file, dst_file)
+                except:
+                    pass
+
+            except BaseException as e:
+                traceback.print_exception(e)
+
+    def upload_logs_to_github(self, report_data):
+        log("Uploading to Github ...")
+        cfg = report_data['config']
+
+        if 'commit_msg' not in report_data:
+            report_data['commit_msg'] = report_data['start_time_stamp']
+
+        report_data['github_link'], report_data['report_folder'] = report.github_push_report(
+            report_data['report_folder'], cfg['githubdrive'], report_data['commit_msg'])
+
+    def upload_logs_to_gdrive(self, report_data):
+        cfg = report_data['config']
+        report_folder = report_data['report_folder']
+        board_name = cfg['auto_pts']['board']
+        gdrive_config = cfg['gdrive']
+
+        log(f'Archiving the report folder ...')
+        report.archive_testcases(report_folder, depth=2)
+
+        log(f'Connecting to GDrive ...')
+        drive = google_drive.Drive(gdrive_config)
+
+        log(f'Creating GDrive directory ...')
+        report_data['gdrive_url'] = drive.new_workdir(board_name)
+        log(report_data['gdrive_url'])
+
+        log("Uploading to GDrive ...")
+        drive.upload_folder(report_folder)
+
+    def send_email(self, report_data):
+        log("Sending email ...")
+
+        cfg = report_data['config']
+        descriptions = report_data['descriptions']
+
+        mail_ctx = {'repos_info': report_data['repo_status'],
+                    'summary': [mail.status_dict2summary_html(report_data['status_count'])],
+                    'log_url': [],
+                    'board': cfg['auto_pts']['board'],
+                    'platform': report_data['platform'],
+                    'pts_ver': report_data['pts_ver'],
+                    'system_version': report_data['system_version'],
+                    'additional_info': '',
+                    }
+
+        mail_ctx.update(cfg['mail'])
+
+        if report_data['regressions']:
+            mail_ctx['summary'].append(mail.regressions2html(report_data['regressions'], descriptions))
+
+        if report_data['progresses']:
+            mail_ctx['summary'].append(mail.progresses2html(report_data['progresses'], descriptions))
+
+        if report_data['new_cases']:
+            mail_ctx['summary'].append(mail.new_cases2html(report_data['new_cases'], descriptions))
+
+        if report_data['deleted_cases']:
+            mail_ctx['summary'].append(mail.deleted_cases2html(report_data['deleted_cases'], descriptions))
+
+        mail_ctx['summary'] = '<br>'.join(mail_ctx['summary'])
+
+        if 'gdrive' in cfg and 'gdrive_url' in report_data:
+            mail_ctx['log_url'].append(mail.url2html(report_data['gdrive_url'], "Results on Google Drive"))
+
+        if 'githubdrive' in cfg and 'github_link' in report_data:
+            mail_ctx['log_url'].append(mail.url2html(report_data['github_link'], 'Results on Github'))
+
+        mail_ctx['log_url'] = '<br>'.join(mail_ctx['log_url'])
+
+        if not mail_ctx['log_url']:
+            mail_ctx['log_url'] = 'Not Available'
+
+        mail_ctx["elapsed_time"] = str(datetime.timedelta(
+            seconds=(int(report_data['end_time'] - report_data['start_time']))))
+
+        if 'additional_info_path' in mail_ctx:
+            try:
+                with open(mail_ctx['additional_info_path']) as file:
+                    mail_ctx['additional_info'] = f'{file.read()} <br>'
+            except Exception as e:
+                logging.exception(e)
+
+        subject, body = self.compose_mail(mail_ctx)
+
+        mail.send_mail(cfg['mail'], subject, body, report_data['mail_attachments'])
+                       # [report_data['report_xlsx'], report_data['report_txt']])
+
+    def compose_mail(self, mail_ctx):
+        """ Create a email body
+        """
+        iso_cal = datetime.date.today().isocalendar()
+        ww_dd_str = "WW%s.%s" % (iso_cal[1], iso_cal[2])
+
+        body = '''
+    <p>This is automated email and do not reply.</p>
+    <h1>Bluetooth test session - {ww_dd_str} </h1>
+    {additional_info}
+    <h2>1. IUT Setup</h2>
+    <p><b> Type:</b> Zephyr <br>
+    <b> Board:</b> {board} <br>
+    <b> Source:</b> {repos_info} </p>
+    <h2>2. PTS Setup</h2>
+    <p><b> OS:</b> {system_version} <br>
+    <b> Platform:</b> {platform} <br>
+    <b> Version:</b> {pts_ver} </p>
+    <h2>3. Test Results</h2>
+    <p><b>Execution Time</b>: {elapsed_time}</p>
+    {summary}
+    <h3>Logs</h3>
+    {log_url}
+    <p>Sincerely,</p>
+    <p>{name}</p>
+'''
+
+        if 'body' in mail_ctx:
+            body = mail_ctx['body']
+
+        body = body.format(ww_dd_str=ww_dd_str, **mail_ctx)
+
+        subject = mail_ctx.get('subject', 'AutoPTS test session results')
+        subject = f"{subject} - {ww_dd_str}"
+
+        return subject, body
 
 
 def get_filtered_test_cases(iut_config, bot_args, config_default, pts):
@@ -517,7 +855,7 @@ def check_call(cmd, env=None, cwd=None, shell=True):
 
 
 def get_workspace(workspace):
-    for root, dirs, files in os.walk(os.path.join(PROJECT_DIR, 'autopts/workspaces'),
+    for root, dirs, files in os.walk(os.path.join(AUTOPTS_ROOT_DIR, 'autopts/workspaces'),
                                      topdown=True):
         for name in dirs:
             if name == workspace:
@@ -560,11 +898,11 @@ def get_absolute_module_path(config_path):
     if os.path.isfile(_path):
         return _path
 
-    _path = os.path.join(PROJECT_DIR, f'autopts/bot/{config_path}')
+    _path = os.path.join(AUTOPTS_ROOT_DIR, f'autopts/bot/{config_path}')
     if os.path.isfile(_path):
         return _path
 
-    _path = os.path.join(PROJECT_DIR, f'autopts/bot/{config_path}.py')
+    _path = os.path.join(AUTOPTS_ROOT_DIR, f'autopts/bot/{config_path}.py')
     if os.path.isfile(_path):
         return _path
 

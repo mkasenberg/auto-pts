@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from autopts.bot.zephyr import make_readme_md
 from autopts.client import FakeProxy, TestCaseRunStats
-from autopts.config import TMP_DIR, ALL_STATS_RESULTS_XML
+from autopts.config import TMP_DIR, ALL_STATS_RESULTS_XML, IUT_LOGS_FOLDER
 from autopts.ptsprojects.testcase_db import TestCaseTable
 from autoptsclient_bot import import_bot_projects, import_bot_module
 from test.mocks.mocked_test_cases import mock_workspace_test_cases, test_case_list_generation_samples
@@ -226,7 +226,7 @@ class MyTestCase(unittest.TestCase):
         repos_info = {'zephyr': {'commit': '123456', 'desc': 'zephyr'}}
         pts_ver = '8_5_0'
 
-        iut_logs = 'logs/'
+        iut_logs = IUT_LOGS_FOLDER
         pts_logs = 'tmp/zephyr-master'
         xmls = 'tmp/XMLs'
         Path(iut_logs).mkdir(parents=True, exist_ok=True)
