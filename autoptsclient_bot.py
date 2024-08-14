@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import copy
 #
 # auto-pts - The Bluetooth PTS Automation Framework
 #
@@ -59,7 +59,7 @@ def import_bot_projects():
         return None, config_path
 
     module = load_module_from_path(config_path)
-    return getattr(module, "BotProjects", None), config_path
+    return copy.deepcopy(getattr(module, "BotProjects", None)), config_path
 
 
 def import_bot_module(project):

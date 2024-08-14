@@ -381,7 +381,7 @@ def main():
     args = CliParser().parse_args()
 
     global cron_config
-    cron_config = load_module_from_path(args.config_path)
+    cron_config = copy.deepcopy(load_module_from_path(args.config_path))
 
     if not cron_config:
         sys.exit(f'Could not load cron config from path {args.config_path}')
