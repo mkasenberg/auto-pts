@@ -784,6 +784,23 @@ class PyPTS:
             self._pts_logger.set_test_case_name(test_case_name)
             self._pts_sender.reopen()
 
+            self.enable_maximum_logging(True)
+
+            address = None
+            for i in range(10):
+                try:
+                    address = self._pts.GetPTSBluetoothAddress()
+                    log(f"Bluetooth address check: {address}")
+                    if not address:
+                        continue
+                    break
+                except Exception as e:
+                    log(e)
+
+            if not address:
+                raise Exception("Bluetooth address not available")
+
+            time.sleep(2)
             self._pts.RunTestCase(project_name, test_case_name)
 
             err = self._pts_logger.get_test_case_status(timeout=30)
