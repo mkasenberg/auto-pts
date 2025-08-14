@@ -33,6 +33,11 @@ class CliParser(argparse.ArgumentParser):
     def __init__(self, cli_support=None, board_names=None, add_help=True):
         super().__init__(description='PTS automation client', add_help=add_help)
 
+        self.add_argument("--autopts-mode", "--autopts_mode", type=str, default='autopts_proxy',
+                          choices=['autopts_proxy', 'autopts_gui', 'autopts_fake', 'autopts_direct_client'],
+                          help="Specify AutoPTS client mode, which determines the method "
+                          "of communication with the PTS.")
+
         self.add_argument("-i", "--ip_addr", nargs="+",
                           help="IP address of the PTS automation servers. "
                           "If running with multiple servers(PTS dongles), "

@@ -86,6 +86,7 @@ class BotConfigArgs(Namespace):
 
     def __init__(self, args, **kwargs):
         super().__init__(**kwargs)
+        self.autopts_mode = args.get('autopts_mode', 'autopts_proxy')
         self.workspace = args['workspace']
         self.project_path = args['project_path']
         self.srv_port = args.get('srv_port', [65000])
@@ -103,10 +104,11 @@ class BotConfigArgs(Namespace):
         self.rtt_log = args.get('rtt_log', False)
         self.btmon = args.get('btmon', False)
         self.device_core = args.get('device_core', 'NRF52840_XXAA')
-        self.test_cases = []
+        self.test_cases = args.get('test_cases', [])
         self.excluded = []
 
         self.bd_addr = args.get('bd_addr', '')
+        self.pts_dongle_addr = args.get('pts_dongle_addr', '')
         self.enable_max_logs = args.get('enable_max_logs', False)
         self.retry = args.get('retry', 0)
         self.repeat_until_fail = args.get('repeat_until_fail', False)

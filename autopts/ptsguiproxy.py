@@ -1,11 +1,13 @@
 import logging
 import tkinter as tk
+from time import sleep
 from tkinter import simpledialog
 from tkinter import messagebox
 from tkinter import ttk
 
+from autopts.client import ClientCallback
 from autopts.ptsprojects.ptstypes import MMI_STYLE_STRING
-
+from autopts.utils import get_global_end
 
 log = logging.debug
 
@@ -125,7 +127,6 @@ class PTSGUIProxy:
         z['auto_pts'] = {
             ...
             'ptsgui_mode': {
-                'pts_version': '8.7.0',
                 'pts_dongle_addr': '00:01:02:03:04:05',
                 'test_cases': {
                     'GAP': ['GAP/SEC/SEM/BV-26-C',],
@@ -137,9 +138,9 @@ class PTSGUIProxy:
 
     def __init__(self, args, callback):
         self.info = f"PTS GUI proxy"
-        self._pts_version = args['pts_version']
-        self._bd_addr = args['pts_dongle_addr']
-        self._test_cases = args['test_cases']
+        self._pts_version = 'Unknown, GUI mode'
+        self._bd_addr = args.pts_dongle_addr
+        self._test_cases = self._parse_test_cases(args.test_cases)
         self._wid_dialog = None
         self._project_name = None
         self._test_case_name = None
@@ -161,6 +162,17 @@ class PTSGUIProxy:
             root.title("GUI root")
             root.attributes("-topmost", 1)
             root.withdraw()
+
+    def _parse_test_cases(self, test_cases):
+        parsed = {}
+        for tc in test_cases:
+            prefix = tc.split('/')[0]
+            if prefix not in parsed:
+                parsed[prefix] = []
+
+            parsed[prefix].append(tc)
+
+        return parsed
 
     def get_version(self):
         return self._pts_version
@@ -191,6 +203,9 @@ class PTSGUIProxy:
         log(f'Update PIXIT: {project_name} {param_name} {param_value}')
 
     def run_test_case(self, project_name, test_case_name):
+        while PTSGUIProxy.root_window is None and not get_global_end():
+            sleep(0.1)
+
         self._project_name = project_name
         self._test_case_name = test_case_name
         return 'WAIT'
@@ -216,3 +231,7 @@ class PTSGUIProxy:
     def mainloop(self):
         self._init_root()
         PTSGUIProxy.root_window.mainloop()
+
+    @staticmethod
+    def factory_get_instance(_id, args):
+        return PTSGUIProxy(args, ClientCallback())

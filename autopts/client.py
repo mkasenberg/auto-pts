@@ -95,8 +95,13 @@ class PtsServerProxy(xmlrpc.client.ServerProxy):
         self.callback = None
 
     @staticmethod
-    def factory_get_instance(_id, server_address, server_port,
-                             client_address, client_port, timeout):
+    def factory_get_instance(_id, args):
+        server_address = args.ip_addr[_id]
+        server_port = args.srv_port[_id]
+        client_address = args.local_addr[_id]
+        client_port = args.cli_port[_id]
+        timeout = args.max_server_restart_time
+
         proxy = proxy = PtsServerProxy(server_address, server_port)
         result = ResultWithFlag(False)
         print(f"{id(proxy)} Starting PTS: {proxy.info} ...")
@@ -113,7 +118,7 @@ class PtsServerProxy(xmlrpc.client.ServerProxy):
         result.wait(timeout=timeout, predicate=wait_for)
 
         log("Server methods: %s", proxy.system.listMethods())
-        proxy.callback_thread = ClientCallbackServer(client_port, f'LT{_id}-callback')
+        proxy.callback_thread = ClientCallbackServer(client_port, f'LT{_id+1}-callback')
         proxy.callback = proxy.callback_thread.callback
         proxy.callback_thread.start()
         proxy.register_client_callback({'xmlrpc_address': client_address, 'xmlrpc_port': client_port})
@@ -152,19 +157,21 @@ else:
     Server = FakeProxy
 
 
-class PtsServer(Server):
+class PtsDirectClient(Server):
     """Builtin instance of autoptsserver for one process mode"""
 
     # Counter of closed autoptsservers
     finish_count = CounterWithFlag(init_count=0)
 
     def __init__(self, _args=None):
-        super().__init__(PtsServer.finish_count, _args=_args)
+        super().__init__(PtsDirectClient.finish_count, _args=_args)
         self.info = f'builtin {_args.srv_port}'
 
     @staticmethod
-    def factory_get_instance(args, timeout):
-        proxy = PtsServer(args)
+    def factory_get_instance(_id, args):
+        timeout = args.max_server_restart_time
+
+        proxy = PtsDirectClient(args.server_args[_id])
         proxy.start()
 
         result = ResultWithFlag(False)
@@ -455,9 +462,13 @@ def init_pts_thread_entry_wrapper(func):
             func(*args)
         except Exception as exc:
             logging.exception(exc)
+            if exceptions is None:
+                raise
+
             exceptions.put(exc)
         finally:
-            counter.add(1)
+            if counter:
+                counter.add(1)
 
     return wrapper
 
@@ -497,51 +508,49 @@ def init_pts_thread_entry(proxy, args, exceptions, finish_count):
     proxy.enable_maximum_logging(args.enable_max_logs)
 
 
-def init_pts(args, ptses):
-    """Initialization procedure for PTS instances"""
+pts_factory = PtsServerProxy
 
-    proxy_list = ptses
+
+def setup_pts_factory(args):
+    global pts_factory
+
+    if args.autopts_mode == 'autopts_fake':
+        pts_factory = FakeProxy
+    elif args.autopts_mode == 'autopts_gui':
+        # You have to install tkinter to use this mode
+        from autopts.ptsguiproxy import PTSGUIProxy
+        pts_factory = PTSGUIProxy
+        # Run in main thread in order to enable GUI
+        # init_pts_thread_entry(proxy, args, exceptions, finish_count)
+    elif args.autopts_mode == 'autopts_direct_client':
+        pts_factory = PtsDirectClient
+    elif args.autopts_mode == 'autopts_proxy':
+        pts_factory = PtsServerProxy
+    else:
+        raise NotImplemented
+
+
+def _pts_init_from_main(proxy_list, args):
+    for proxy in proxy_list:
+        init_pts_thread_entry(proxy, args, None, None)
+
+
+def _pts_init_from_threads(proxy_list, args):
     thread_list = []
     exceptions = queue.Queue()
-    thread_count = len(args.cli_port)
+    server_count = len(proxy_list)
     finish_count = CounterWithFlag(init_count=0)
 
-    init_logging('_' + '_'.join(str(x) for x in args.cli_port))
-    server_count = getattr(args, 'server_count', len(args.cli_port))
-
-    # PtsServer.finish_count.clear()
-    for i in range(0, server_count):
-        if i < len(proxy_list):
-            proxy = proxy_list[i]
-        else:
-            if AUTO_PTS_LOCAL:
-                proxy = FakeProxy()
-            elif getattr(args, 'ptsgui_mode', False):
-                from autopts.ptsguiproxy import PTSGUIProxy
-                proxy = PTSGUIProxy(args.ptsgui_mode, ClientCallback())
-                # Run in main thread in order to enable GUI
-                init_pts_thread_entry(proxy, args, exceptions, finish_count)
-                proxy_list.append(proxy)
-                continue
-
-            elif getattr(args, 'server_args', False):
-                proxy = PtsServer.factory_get_instance(args.server_args[i], args.max_server_restart_time)
-            else:
-                proxy = PtsServerProxy.factory_get_instance(
-                    i + 1, args.ip_addr[i], args.srv_port[i],
-                    args.local_addr[i], args.cli_port[i],
-                    args.max_server_restart_time)
-            proxy_list.append(proxy)
-
+    for _id, proxy in enumerate(proxy_list, 1):
         thread = InterruptableThread(target=init_pts_thread_entry,
-                                     name=f'LT{i + 1}-server-init',
+                                     name=f'LT{_id}-server-init',
                                      args=(proxy, args, exceptions, finish_count))
         thread_list.append(thread)
         thread.start()
 
     # Wait until each PTS instance is initialized.
     try:
-        finish_count.wait_for(thread_count, timeout=max(
+        finish_count.wait_for(server_count, timeout=max(
             180.0, server_count * args.max_server_restart_time))
     except Exception as e:
         logging.exception(e)
@@ -550,7 +559,7 @@ def init_pts(args, ptses):
         for _i, thread in enumerate(thread_list):
             if thread.is_alive():
                 thread.interrupt()
-                log(f"({id(proxy_list[i])}) init failed")
+                log(f"({id(proxy_list[_i])}) init failed")
 
     exeption_msg = ''
     for _ in range(exceptions.qsize()):
@@ -558,6 +567,25 @@ def init_pts(args, ptses):
 
     if exeption_msg:
         raise Exception(exeption_msg)
+
+
+def init_pts(args, ptses):
+    """Initialization procedure for PTS instances"""
+
+    proxy_list = ptses
+    init_logging('_' + '_'.join(str(x) for x in args.cli_port))
+    server_count = getattr(args, 'server_count', len(args.cli_port))
+
+    # PtsDirectClient.finish_count.clear()
+    if len(proxy_list) == 0:
+        for i in range(0, server_count):
+            proxy = pts_factory.factory_get_instance(_id=i, args=args)
+            proxy_list.append(proxy)
+
+    if len(proxy_list) == 1 or args.autopts_mode == 'autopts_gui':
+        _pts_init_from_main(proxy_list, args)
+    else:
+        _pts_init_from_threads(proxy_list, args)
 
     return proxy_list
 
@@ -1480,6 +1508,7 @@ class Client:
                 if (_line := line.strip()) and not _line.startswith("#")]
             self.args.test_cases.extend(tests)
 
+        setup_pts_factory(self.args)
         init_pts(self.args, self.ptses)
 
         btp.init(self.get_iut)
@@ -1552,7 +1581,7 @@ class Client:
             if getattr(pts, 'callback_thread', None):
                 pts.callback_thread.stop()
 
-            if isinstance(pts, PtsServer):
+            if isinstance(pts, PtsDirectClient):
                 pts.terminate()
 
         self.ptses.clear()
