@@ -36,7 +36,7 @@ PTS_WORKSPACE_FILE_EXT = ".pqw6"
 # Global paths for wid report
 BASE_DIR = Path(__file__).parent.parent.resolve()
 LOG_DIR = BASE_DIR / "logs"
-OUTPUT_CSV_PATH = BASE_DIR / "tmp" / "wid_usage_report.csv"
+OUTPUT_CSV_PATH = BASE_DIR / "wid_usage_report.csv"
 
 # Regex patterns for log field parsing in wid report
 WID_REGEX = re.compile(r"^wid:\s*(\S+)")
@@ -578,6 +578,56 @@ def extract_wid_testcases_to_csv():
                 testcases = sorted(profile_wid_map[profile][wid])
                 testcases_combined = " ".join(testcases)
                 writer.writerow([wid, testcases_combined])
+
+
+Sep = re.compile(r'[,\s;|]+')
+
+
+def load_wid_report() -> dict[tuple[str, str], list[str]]:
+    """
+    Parse a 'sectioned' CSV where:
+      - A row with a single non-empty field denotes a SERVICE header (e.g., 'GAP').
+      - Subsequent rows belong to that service and look like: wid_number, testcases...
+        (testcases may be separated by spaces/commas/semicolons/pipes)
+      - A new SERVICE header starts a new section.
+
+    Returns:
+      mapping[(SERVICE_UPPER, WID_STR)] -> [testcase, ...]
+    """
+    mapping: dict[tuple[str, str], list[str]] = defaultdict(list)
+    current_service: str = "<UNSET>"
+
+    if not OUTPUT_CSV_PATH.exists():
+        raise FileNotFoundError(f"WID report not found: {OUTPUT_CSV_PATH}")
+
+    with open(OUTPUT_CSV_PATH, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for raw in reader:
+            row = [col.strip() for col in raw if col is not None]
+            if not row or all(col == "" for col in row):
+                continue
+
+            if len([c for c in row if c]) == 1 and not row[0].isdigit():
+                current_service = row[0].upper()
+                continue
+
+            if current_service == "<UNSET>":
+                raise RuntimeError(f"Data row found before any service header: {row}")
+
+            wid = row[0].strip()
+            tcs_field = row[1].strip() if len(row) > 1 else ""
+            testcases = [t for t in Sep.split(tcs_field) if t]
+            if testcases:
+                mapping[(current_service, wid)].extend(testcases)
+
+    return mapping
+
+
+def get_tc_from_wid(service: str, wid: int, mapping: dict[tuple[str, str], list[str]]) -> list[str]:
+    """
+    Return testcases for (service, wid). Service match is case-insensitive.
+    """
+    return mapping.get((service.upper(), str(wid)), [])
 
 
 def main():
