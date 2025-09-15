@@ -31,12 +31,13 @@ from time import sleep
 import hid
 import psutil
 
+from autopts.config import FILE_PATHS
+
 PTS_WORKSPACE_FILE_EXT = ".pqw6"
 
 # Global paths for wid report
 BASE_DIR = Path(__file__).parent.parent.resolve()
 LOG_DIR = BASE_DIR / "logs"
-OUTPUT_CSV_PATH = BASE_DIR / "wid_usage_report.csv"
 
 # Regex patterns for log field parsing in wid report
 WID_REGEX = re.compile(r"^wid:\s*(\S+)")
@@ -570,6 +571,7 @@ def extract_wid_testcases_to_csv():
                     test_case_name = None
 
     # Output results to CSV grouped by profile and wid
+    OUTPUT_CSV_PATH = FILE_PATHS['OUTPUT_CSV_PATH']
     with OUTPUT_CSV_PATH.open('w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         for profile in sorted(profile_wid_map.keys()):
@@ -596,6 +598,8 @@ def load_wid_report() -> dict[tuple[str, str], list[str]]:
     """
     mapping: dict[tuple[str, str], list[str]] = defaultdict(list)
     current_service: str = "<UNSET>"
+
+    OUTPUT_CSV_PATH = FILE_PATHS['OUTPUT_CSV_PATH']
 
     if not OUTPUT_CSV_PATH.exists():
         raise FileNotFoundError(f"WID report not found: {OUTPUT_CSV_PATH}")
