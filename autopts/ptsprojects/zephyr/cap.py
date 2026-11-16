@@ -21,7 +21,7 @@ from autopts.client import get_unique_name
 from autopts.ptsprojects.stack import SynchPoint, get_stack
 from autopts.ptsprojects.testcase import TestFunc
 from autopts.ptsprojects.zephyr.cap_wid import cap_wid_hdl
-from autopts.ptsprojects.zephyr.ztestcase import ZTestCase, ZTestCaseSlave
+from autopts.ptsprojects.zephyr.ztestcase import ZTestCase, ZTestCaseSlave, ZTestCaseSlave2
 from autopts.pybtp import btp
 from autopts.pybtp.btp.cap import announcements
 from autopts.pybtp.btp.gap import gap_set_uuid16_svc_data
@@ -99,6 +99,8 @@ def test_cases(ptses):
     adv_data, rsp_data = {}, {}
 
     iut_addr = ResultWithFlag()
+    # Separate, as LT2 clears iut_addr
+    iut_addr_lt3 = ResultWithFlag()
 
     def set_addr(addr):
         iut_addr.set(addr)
@@ -1085,6 +1087,62 @@ def test_cases(ptses):
             generic_wid_hdl=cap_wid_hdl,
             lt2="CAP/INI/UTB/BV-04-C_LT2",
         ),
+        ZTestCase(
+            "CAP",
+            "CAP/COM/BST/BV-01-C",
+            cmds=pre_conditions
+            + [
+                # Gives a signal to the LT3 to continue its preconditions
+                TestFunc(lambda: iut_addr_lt3.set(stack.gap.iut_addr_get_str())),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-01-C", 20100), SynchPoint("CAP/COM/BST/BV-01-C_LT2", 20100)],
+                ),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-01-C", 20106), SynchPoint("CAP/COM/BST/BV-01-C_LT2", 20106)],
+                ),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-01-C", 405), SynchPoint("CAP/COM/BST/BV-01-C_LT2", 405)],
+                ),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-01-C", 345), SynchPoint("CAP/COM/BST/BV-01-C_LT2", 345)],
+                ),
+            ],
+            generic_wid_hdl=cap_wid_hdl,
+            lt2="CAP/COM/BST/BV-01-C_LT2",
+            lt3="CAP/COM/BST/BV-01-C_LT3",
+        ),
+        ZTestCase(
+            "CAP",
+            "CAP/COM/BST/BV-02-C",
+            cmds=pre_conditions
+            + [
+                # Gives a signal to the LT3 to continue its preconditions
+                TestFunc(lambda: iut_addr_lt3.set(stack.gap.iut_addr_get_str())),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-02-C", 20100), SynchPoint("CAP/COM/BST/BV-02-C_LT2", 20100)],
+                ),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-02-C", 20106), SynchPoint("CAP/COM/BST/BV-02-C_LT2", 20106)],
+                ),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-02-C", 405), SynchPoint("CAP/COM/BST/BV-02-C_LT2", 405)],
+                ),
+                TestFunc(
+                    get_stack().synch.add_synch_element,
+                    [SynchPoint("CAP/COM/BST/BV-02-C", 345), SynchPoint("CAP/COM/BST/BV-02-C_LT2", 345)],
+                ),
+            ],
+            generic_wid_hdl=cap_wid_hdl,
+            lt2="CAP/COM/BST/BV-02-C_LT2",
+            lt3="CAP/COM/BST/BV-02-C_LT3",
+        ),
     ]
 
     test_case_name_list = pts.get_test_case_list('CAP')
@@ -1145,6 +1203,24 @@ def test_cases(ptses):
         ZTestCaseSlave("CAP", "CAP/INI/UTB/BV-02-C_LT2", cmds=pre_conditions_lt2, generic_wid_hdl=cap_wid_hdl),
         ZTestCaseSlave("CAP", "CAP/INI/UTB/BV-03-C_LT2", cmds=pre_conditions_lt2, generic_wid_hdl=cap_wid_hdl),
         ZTestCaseSlave("CAP", "CAP/INI/UTB/BV-04-C_LT2", cmds=pre_conditions_lt2, generic_wid_hdl=cap_wid_hdl),
+        ZTestCaseSlave("CAP", "CAP/COM/BST/BV-01-C_LT2", cmds=pre_conditions_lt2, generic_wid_hdl=cap_wid_hdl),
+        ZTestCaseSlave("CAP", "CAP/COM/BST/BV-02-C_LT2", cmds=pre_conditions_lt2, generic_wid_hdl=cap_wid_hdl),
     ]
 
-    return tc_list + test_cases_lt2
+    if len(ptses) < 3:
+        return tc_list + test_cases_lt2
+
+    pts3 = ptses[2]
+
+    pre_conditions_lt3 = [
+        TestFunc(lambda: pts3.update_pixit_param(
+            "CAP", "TSPX_bd_addr_iut", iut_addr_lt3.get(timeout=90, clear=True))),
+        TestFunc(btp.set_lt3_addr, pts3.q_bd_addr, Addr.le_public),
+    ]
+
+    test_cases_lt3 = [
+        ZTestCaseSlave2("CAP", "CAP/COM/BST/BV-01-C_LT3", cmds=pre_conditions_lt3, generic_wid_hdl=cap_wid_hdl),
+        ZTestCaseSlave2("CAP", "CAP/COM/BST/BV-02-C_LT3", cmds=pre_conditions_lt3, generic_wid_hdl=cap_wid_hdl),
+    ]
+
+    return tc_list + test_cases_lt2 + test_cases_lt3

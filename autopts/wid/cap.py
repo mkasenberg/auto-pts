@@ -1033,6 +1033,10 @@ def hdl_wid_20100(params: WIDParams):
         if ev is None:
             return False
 
+    # Scan for the broadcast of LT3 on behalf of the LTs, as in BAP/BA/BASS/BV-02-C
+    if params.test_case_name.removesuffix("_LT2") in ["CAP/COM/BST/BV-01-C", "CAP/COM/BST/BV-02-C"]:
+        btp.bap_broadcast_assistant_scan_start(addr_type, addr)
+
     return True
 
 
