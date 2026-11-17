@@ -1096,7 +1096,12 @@ def test_cases(ptses):
                 TestFunc(lambda: iut_addr_lt3.set(stack.gap.iut_addr_get_str())),
                 TestFunc(
                     get_stack().synch.add_synch_element,
-                    [SynchPoint("CAP/COM/BST/BV-01-C", 20100), SynchPoint("CAP/COM/BST/BV-01-C_LT2", 20100)],
+                    [
+                        SynchPoint("CAP/COM/BST/BV-01-C", 20100),
+                        SynchPoint("CAP/COM/BST/BV-01-C_LT2", 20100),
+                        # The PA sync of LT3 blocks connecting to LT1 and LT2
+                        SynchPoint("CAP/COM/BST/BV-01-C_LT3", 100),
+                    ],
                 ),
                 TestFunc(
                     get_stack().synch.add_synch_element,
@@ -1124,7 +1129,12 @@ def test_cases(ptses):
                 TestFunc(lambda: iut_addr_lt3.set(stack.gap.iut_addr_get_str())),
                 TestFunc(
                     get_stack().synch.add_synch_element,
-                    [SynchPoint("CAP/COM/BST/BV-02-C", 20100), SynchPoint("CAP/COM/BST/BV-02-C_LT2", 20100)],
+                    [
+                        SynchPoint("CAP/COM/BST/BV-02-C", 20100),
+                        SynchPoint("CAP/COM/BST/BV-02-C_LT2", 20100),
+                        # The PA sync of LT3 blocks connecting to LT1 and LT2
+                        SynchPoint("CAP/COM/BST/BV-02-C_LT3", 100),
+                    ],
                 ),
                 TestFunc(
                     get_stack().synch.add_synch_element,
