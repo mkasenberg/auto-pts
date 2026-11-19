@@ -1168,6 +1168,7 @@ class PyPTS:
         try:
             self._store_time_guard(project_name, param_name, param_value)
             self._pts.UpdatePixitParam(project_name, param_name, param_value)
+            self._test_same_pixit(project_name, param_name, param_value)
             self.add_recov(self.set_pixit, project_name, param_name,
                            param_value)
 
@@ -1180,6 +1181,17 @@ class PyPTS:
                 raise BadPixitException(f'{project_name} {param_name} {param_value}:\n{err}') from e
 
             raise Exception(e) from e
+
+    def _test_same_pixit(self, project_name, param_name, value):
+        # TEST: set the PIXIT to the same value again
+        try:
+            self._pts.UpdatePixitParam(project_name, param_name, value)
+            msg = f'TEST same PIXIT value OK: {project_name} {param_name} {value}'
+        except Exception as e:
+            msg = f'TEST same PIXIT value ERROR: {project_name} {param_name} {value}: {e}'
+
+        log(msg)
+        print(msg)
 
     def _store_time_guard(self, project_name, param_name, value):
         if param_name != 'TSPX_time_guard':
@@ -1210,6 +1222,7 @@ class PyPTS:
             self._store_time_guard(project_name, param_name, new_param_value)
             self._pts.UpdatePixitParam(
                 project_name, param_name, new_param_value)
+            self._test_same_pixit(project_name, param_name, new_param_value)
             self._add_temp_change(self.update_pixit_param, project_name,
                                   param_name)
         except Exception as e:
