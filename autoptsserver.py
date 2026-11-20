@@ -30,6 +30,7 @@
 
 import argparse
 import copy
+import json
 import logging as root_logging
 import os
 import platform
@@ -44,7 +45,7 @@ import xmlrpc.server
 from functools import partial
 from os.path import abspath, dirname
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 
 import pythoncom
 import serial.tools.list_ports
@@ -127,6 +128,99 @@ class PtsClientProxy(xmlrpc.client.ServerProxy):
         self.client_port = client_port
 
 
+class EventStream:
+    """PTS callback that sends the PTS callbacks to the client as JSON lines
+    over the 'GET /events' connection, which the client keeps open:
+
+        {"method": "set_result", "args": ["run_test_case", "PASS"]}
+
+    The events are queued while no client is connected.
+
+    Args:
+        maxsize: maximum number of queued events
+    """
+
+    def __init__(self, maxsize=10000):
+        self._queue = Queue(maxsize)
+        self._conn = None
+        threading.Thread(target=self._send_events, name='EventStream', daemon=True).start()
+
+    def attach(self, conn):
+        """Sends the next events over conn, instead of the previous client"""
+        log(f'Event stream connected: {conn.getpeername()}')
+        conn.settimeout(10)
+        old, self._conn = self._conn, conn
+        if old:
+            old.close()
+
+    def owns(self, conn):
+        return conn is self._conn
+
+    def _put(self, method, *args):
+        data = json.dumps({'method': method, 'args': args}, default=str) + '\n'
+        try:
+            self._queue.put_nowait(data.encode())
+        except Full:
+            log(f'Event stream queue full, dropping {method} {args}')
+
+    def _send_events(self):
+        event = None
+        while True:
+            if event is None:
+                event = self._queue.get()
+
+            conn = self._conn
+            if conn is None:
+                time.sleep(0.1)
+                continue
+
+            try:
+                conn.sendall(event)
+                event = None
+            except OSError as e:
+                # Keep the event for the next client
+                log(f'Event stream lost: {e!r}')
+                if self._conn is conn:
+                    self._conn = None
+                conn.close()
+
+    def log(self, *args):
+        self._put('log', *args)
+
+    def on_implicit_send(self, *args):
+        self._put('on_implicit_send', *args)
+        # The client responds with set_wid_response()
+        return "WAIT"
+
+    def set_result(self, *args):
+        self._put('set_result', *args)
+
+
+class EventStreamRequestHandler(xmlrpc.server.SimpleXMLRPCRequestHandler):
+    def do_GET(self):
+        if self.path != '/events':
+            self.report_404()
+            return
+
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.flush()
+        self.server.event_stream.attach(self.connection)
+
+
+class EventStreamXMLRPCServer(xmlrpc.server.SimpleXMLRPCServer):
+    """XML-RPC server that also serves 'GET /events' with event_stream"""
+
+    def __init__(self, addr, event_stream, **kwargs):
+        self.event_stream = event_stream
+        super().__init__(addr, requestHandler=EventStreamRequestHandler, **kwargs)
+
+    def shutdown_request(self, request):
+        # Keep the event stream connection open
+        if not self.event_stream.owns(request):
+            super().shutdown_request(request)
+
+
 class PyPTSWithCallback(ptscontrol.PyPTS, threading.Thread):
     """A child class that adds support of xmlrpc PTS callbacks to PyPTS"""
 
@@ -136,7 +230,9 @@ class PyPTSWithCallback(ptscontrol.PyPTS, threading.Thread):
         threading.Thread.__init__(self, target=self._pts_thread_work,
                                   name=name)
         self.args = args
+        self.event_stream = EventStream()
         self.client_callback = None
+        self.register_ptscallback(self.event_stream)
         self.pts_thread = None
         self.pts_thread_id = None
         self.ptscontrol_request_queue = Queue()
@@ -168,7 +264,7 @@ class PyPTSWithCallback(ptscontrol.PyPTS, threading.Thread):
         log(f"{self.unregister_client_callback.__name__},"
             f"{self.client_callback}")
 
-        self.unregister_ptscallback()
+        self.register_ptscallback(self.event_stream)
         self.client_callback = None
 
     def _replug_dongle(self):
@@ -538,7 +634,8 @@ class Server(threading.Thread, PTSProxy):
 
         print(f"Serving on port {self._args.srv_port} ...")
 
-        self.server = xmlrpc.server.SimpleXMLRPCServer(("", self._args.srv_port), allow_none=True)
+        self.server = EventStreamXMLRPCServer(("", self._args.srv_port), self.pts.event_stream,
+                                              allow_none=True)
         # These methods will be run in the XMLRPC context
         self.server.register_function(self.list_workspace_tree, 'list_workspace_tree')
         self.server.register_function(self.copy_file, 'copy_file')
