@@ -107,27 +107,6 @@ def init_logging(_args):
         root_logger.addHandler(file_handler)
 
 
-class PtsClientProxy(xmlrpc.client.ServerProxy):
-    """TCP/IP socket for sending callbacks to the auto-pts client.
-    Args:
-        client_address: IP address of the auto-pts client that started
-         its own xmlrpc server to receive callback messages
-
-        client_port: TCP port
-    """
-    def __init__(self, client_address, client_port):
-        super().__init__(uri=f"http://{client_address}:{client_port}/",
-                         allow_none=True, transport=None,
-                         encoding=None, verbose=False,
-                         use_datetime=False, use_builtin_types=False,
-                         headers=(), context=None)
-
-        log(f"{self.__init__.__name__}, uri={self.uri}")
-
-        self.client_address = client_address
-        self.client_port = client_port
-
-
 class EventStream:
     """PTS callback that sends the PTS callbacks to the client as JSON lines
     over the 'GET /events' connection, which the client keeps open:
@@ -243,23 +222,16 @@ class PyPTSWithCallback(ptscontrol.PyPTS, threading.Thread):
         pass
 
     def register_client_callback(self, kwargs):
-        """Registers client callback. xmlrpc proxy/client calls this method
-        to register its callback
-        """
+        """Registers the callback of the client running in the same process,
+        instead of the event stream"""
 
         log(f"{self.register_client_callback.__name__}")
 
-        if 'xmlrpc_address' in kwargs:
-            # auto-pts client and server as a separate processes
-            self.client_callback = PtsClientProxy(kwargs['xmlrpc_address'], kwargs['xmlrpc_port'])
-        else:
-            # One process mode
-            self.client_callback = kwargs['client_callback']
-
+        self.client_callback = kwargs['client_callback']
         self.register_ptscallback(self.client_callback)
 
     def unregister_client_callback(self):
-        """Unregisters the client callback"""
+        """Switches back to the event stream"""
 
         log(f"{self.unregister_client_callback.__name__},"
             f"{self.client_callback}")
