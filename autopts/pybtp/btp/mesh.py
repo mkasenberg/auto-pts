@@ -18,6 +18,7 @@
 import binascii
 import logging
 import struct
+import time
 
 from autopts.ptsprojects.stack import get_stack
 from autopts.pybtp import defs
@@ -694,6 +695,8 @@ def mesh_composition_data_get(net_idx, addr, page):
         stack.mesh.set_tester_comp_data(f'page{rec_page}', comp_data)
         if rec_page:
             req_page = rec_page - 1
+            # Zephyr may drop a request sent right after the previous status
+            time.sleep(0.1)
         else:
             break
 
